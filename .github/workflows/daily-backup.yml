@@ -1,0 +1,52 @@
+name: Daily Supabase Backup
+
+on:
+  schedule:
+    - cron: '0 20 * * *'   # 8:00 PM UTC = 1:30 AM IST
+  workflow_dispatch:         # also lets you trigger manually from GitHub UI
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Create backups directory
+        run: mkdir -p backups
+
+      # ── Main customer table ──
+      - name: Backup admin table (customers)
+        run: |
+          curl -s -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/admin?select=*" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Accept: text/csv" \
+            -o "backups/admin_$(date +%Y-%m-%d).csv"
+
+      # ── Activity log ──
+      - name: Backup activity_log table
+        run: |
+          curl -s -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/activity_log?select=*&order=created_at.desc&limit=5000" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Accept: text/csv" \
+            -o "backups/activity_log_$(date +%Y-%m-%d).csv"
+
+      # ── Metadata / dropdown values ──
+      - name: Backup metadata table
+        run: |
+          curl -s -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/metadata?select=*" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Accept: text/csv" \
+            -o "backups/metadata_$(date +%Y-%m-%d).csv"
+
+      - name: Commit and push CSV backups
+        run: |
+          git config user.name  "backup-bot"
+          git config user.email "backup-bot@users.noreply.github.com"
+          git add backups/
+          git commit -m "Daily backup $(date +%Y-%m-%d)" || echo "No changes to commit"
+          git push

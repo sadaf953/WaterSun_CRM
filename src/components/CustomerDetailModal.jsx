@@ -1,7 +1,7 @@
 // ─── CustomerDetailModal.jsx ──────────────────────────────────────────────────
 // Full customer detail: 4-tab layout (Overview, Finance & Bank, Checklist,
-// Notes & History). Section-level editing, payments array editor, subsidy
-// history editor, financial tag toggle, and system activity timeline.
+// Notes & History). Section-level editing, payments array editor, generic
+// history entry editor, financial tag toggle, and system activity timeline.
 //
 // CLIENT CUSTOMISATION:
 //   • Sections and fields: edit the <section> blocks in the Overview/Finance tabs
@@ -12,28 +12,102 @@
 import { useState, useEffect } from 'react';
 import {
     X, Edit3, Trash2, Save, Send, AlertTriangle, CheckSquare,
-    MessageSquare, User, Zap, IndianRupee, Building2, FolderOpen, MapPin,
-    LayoutDashboard, History, Plus, ShieldCheck,
+    User, Zap, IndianRupee, Building2, FolderOpen, MapPin,
+    LayoutDashboard, History, Plus, ShieldCheck, Banknote,
 } from 'lucide-react';
 import { PRIMARY_STAGES, FINANCIAL_TAGS, FINANCIAL_TAG_COLORS } from '../constants';
 import { normalizeChecklist } from '../models';
 import { logActivity, formatLogDate } from '../utils';
 import { supabase } from '../supabase';
+import HistoryEntryEditor from './HistoryEntryEditor';
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── formatMoney: Indian comma system (₹1,00,000) ────────────────────────────
+function fmt(val) {
+    const n = Number(val);
+    if (!val || isNaN(n)) return '–';
+    return '₹' + n.toLocaleString('en-IN');
+}
 
+// ─── MetaSelect: dropdown that lets the user type+add a new option ───────────
+// Adds the new value to the Supabase metadata table automatically.
+function MetaSelect({ label, field, value, onChange, category, options = [], isEditing }) {
+    const [adding, setAdding] = useState(false);
+    const [newVal, setNewVal] = useState('');
+    const [localOptions, setLocalOptions] = useState(options);
+
+    useEffect(() => { setLocalOptions(options); }, [options.length]);
+
+    const handleAdd = async () => {
+        const trimmed = newVal.trim();
+        if (!trimmed) return;
+        // Persist to Supabase metadata table
+        await supabase.from('metadata').insert({ category, label: trimmed });
+        setLocalOptions(prev => [...prev, trimmed]);
+        onChange(field, trimmed);
+        setNewVal('');
+        setAdding(false);
+    };
+
+    if (!isEditing) {
+        return (
+            <div className="bg-stone-50 p-3 rounded-xl">
+                <p className="text-[9px] text-stone-400 uppercase tracking-wide mb-1 font-bold">{label}</p>
+                <p className="text-sm font-semibold truncate text-stone-800">{value || '–'}</p>
+            </div>
+        );
+    }
+
+    if (adding) {
+        return (
+            <div className="bg-stone-50 p-3 rounded-xl space-y-2">
+                <p className="text-[9px] text-stone-400 uppercase tracking-wide font-bold">{label} — New</p>
+                <div className="flex gap-1">
+                    <input autoFocus value={newVal} onChange={e => setNewVal(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleAdd()}
+                        placeholder={`New ${label}...`}
+                        className="flex-1 bg-white border border-amber-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-300" />
+                    <button onClick={handleAdd} className="px-2 py-1 bg-amber-500 text-white rounded-lg text-xs font-bold">Add</button>
+                    <button onClick={() => setAdding(false)} className="px-2 py-1 bg-stone-200 text-stone-600 rounded-lg text-xs">✕</button>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="bg-stone-50 p-3 rounded-xl">
+            <p className="text-[9px] text-stone-400 uppercase tracking-wide mb-1 font-bold">{label}</p>
+            <div className="flex gap-1">
+                <select value={value || ''} onChange={e => onChange(field, e.target.value)}
+                    className="flex-1 bg-white border border-stone-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-300">
+                    <option value="">Select...</option>
+                    {localOptions.map(o => <option key={o}>{o}</option>)}
+                </select>
+                <button onClick={() => setAdding(true)} title="Add new option"
+                    className="px-2 py-1 bg-stone-100 hover:bg-amber-50 hover:text-amber-600 text-stone-400 rounded-lg text-xs transition-colors">
+                    <Plus className="w-3.5 h-3.5" />
+                </button>
+            </div>
+        </div>
+    );
+}
+
+// ─── DetailItem / EditableDetailItem ──────────────────────────────────────────
 function DetailItem({ label, value, isMoney = false, isEnergy = false }) {
     return (
         <div className="bg-stone-50 p-3 rounded-xl">
             <p className="text-[9px] text-stone-400 uppercase tracking-wide mb-1 font-bold">{label}</p>
             <p className={`text-sm font-semibold truncate ${isMoney ? 'text-emerald-600' : isEnergy ? 'text-amber-600' : 'text-stone-800'}`}>
-                {value || '–'}
+                {isMoney ? fmt(value) : (value || '–')}
             </p>
         </div>
     );
 }
 
-function EditableDetailItem({ label, field, value, onChange, type = 'text', isMoney = false, isEnergy = false, isEditing, options }) {
+function EditableDetailItem({ label, field, value, onChange, type = 'text', isMoney = false, isEnergy = false, isEditing, options, category, meta }) {
+    // Metadata-driven dropdown with add-new
+    if (options && category) {
+        return <MetaSelect label={label} field={field} value={value} onChange={onChange} category={category} options={options} isEditing={isEditing} />;
+    }
     if (!isEditing) return <DetailItem label={label} value={value} isMoney={isMoney} isEnergy={isEnergy} />;
     return (
         <div className="bg-stone-50 p-3 rounded-xl">
@@ -52,10 +126,26 @@ function EditableDetailItem({ label, field, value, onChange, type = 'text', isMo
     );
 }
 
+// ─── PaymentsEditor ───────────────────────────────────────────────────────────
+// onChange(newPayments, totalReceived) — passes total up so parent can save it
 function PaymentsEditor({ payments = [], onChange, isEditing }) {
-    const handleChange = (idx, field, val) => onChange(payments.map((p, i) => i === idx ? { ...p, [field]: val } : p));
-    const addPayment  = () => onChange([...payments, { no: payments.length + 1, amount: '', date: '' }]);
-    const removePayment = (idx) => onChange(payments.filter((_, i) => i !== idx));
+    const handleChange = (idx, field, val) => {
+        const next = payments.map((p, i) => i === idx ? { ...p, [field]: val } : p);
+        const total = next.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+        onChange(next, total);
+    };
+    const addPayment = () => {
+        const next = [...payments, { no: payments.length + 1, amount: '', date: '' }];
+        const total = next.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+        onChange(next, total);
+    };
+    const removePayment = (idx) => {
+        const next = payments.filter((_, i) => i !== idx);
+        const total = next.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+        onChange(next, total);
+    };
+
+    const displayTotal = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
 
     if (!isEditing) return (
         <div className="space-y-2">
@@ -69,6 +159,12 @@ function PaymentsEditor({ payments = [], onChange, isEditing }) {
                     {p.date && <p className="text-xs text-stone-400">{p.date}</p>}
                 </div>
             ))}
+            {payments.length > 0 && (
+                <div className="bg-emerald-50 rounded-xl p-3 flex justify-between items-center border border-emerald-100">
+                    <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wide">Total Received</p>
+                    <p className="text-sm font-bold text-emerald-700">₹{displayTotal.toLocaleString('en-IN')}</p>
+                </div>
+            )}
         </div>
     );
 
@@ -78,7 +174,9 @@ function PaymentsEditor({ payments = [], onChange, isEditing }) {
                 <div key={i} className="bg-stone-50 p-3 rounded-xl space-y-2 border border-stone-200">
                     <div className="flex items-center justify-between">
                         <p className="text-[9px] font-bold text-stone-400 uppercase">Payment {p.no || i + 1}</p>
-                        <button onClick={() => removePayment(i)} className="text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => removePayment(i)} className="text-red-400 hover:text-red-600">
+                            <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                         <input type="number" placeholder="Amount (₹)" value={p.amount || ''}
@@ -94,58 +192,18 @@ function PaymentsEditor({ payments = [], onChange, isEditing }) {
                 className="w-full flex items-center justify-center gap-1.5 border border-dashed border-stone-300 rounded-xl py-2 text-xs text-stone-500 hover:border-amber-400 hover:text-amber-600 transition-colors">
                 <Plus className="w-3.5 h-3.5" /> Add Payment
             </button>
+            {payments.length > 0 && (
+                <div className="bg-amber-50 rounded-xl p-3 flex justify-between items-center border border-amber-100">
+                    <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wide">Auto Total (will save)</p>
+                    <p className="text-sm font-bold text-amber-700">₹{displayTotal.toLocaleString('en-IN')}</p>
+                </div>
+            )}
         </div>
     );
 }
 
-function SubsidyHistoryEditor({ subsidyHistory = [], onChange, isEditing }) {
-    const TYPE_OPTIONS = ['Rejected', 'Redeemed', 'Disbursed'];
-    const addEntry    = () => onChange([...subsidyHistory, { type: 'Rejected', date: '', remark: '', created_at: new Date().toISOString() }]);
-    const removeEntry = (idx) => onChange(subsidyHistory.filter((_, i) => i !== idx));
-    const updateEntry = (idx, field, val) => onChange(subsidyHistory.map((e, i) => i === idx ? { ...e, [field]: val } : e));
-
-    if (!isEditing) return (
-        <div className="space-y-2">
-            {subsidyHistory.length === 0 && <p className="text-xs text-stone-400 italic">No subsidy history recorded</p>}
-            {subsidyHistory.map((e, i) => (
-                <div key={i} className="bg-stone-50 p-3 rounded-xl">
-                    <div className="flex justify-between items-center mb-1">
-                        <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase ${e.type === 'Disbursed' ? 'bg-emerald-100 text-emerald-700' : e.type === 'Redeemed' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>{e.type}</span>
-                        {e.date && <p className="text-xs text-stone-400">{e.date}</p>}
-                    </div>
-                    {e.remark && <p className="text-xs text-stone-600 mt-1">{e.remark}</p>}
-                </div>
-            ))}
-        </div>
-    );
-
-    return (
-        <div className="space-y-2">
-            {subsidyHistory.map((e, i) => (
-                <div key={i} className="bg-stone-50 p-3 rounded-xl space-y-2 border border-stone-200">
-                    <div className="flex items-center justify-between">
-                        <p className="text-[9px] font-bold text-stone-400 uppercase">Entry {i + 1}</p>
-                        <button onClick={() => removeEntry(i)} className="text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                        <select value={e.type || 'Rejected'} onChange={ev => updateEntry(i, 'type', ev.target.value)}
-                            className="bg-white border border-stone-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-300">
-                            {TYPE_OPTIONS.map(t => <option key={t}>{t}</option>)}
-                        </select>
-                        <input type="date" value={e.date || ''} onChange={ev => updateEntry(i, 'date', ev.target.value)}
-                            className="bg-white border border-stone-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-300" />
-                    </div>
-                    <input type="text" placeholder="Remark..." value={e.remark || ''} onChange={ev => updateEntry(i, 'remark', ev.target.value)}
-                        className="w-full bg-white border border-stone-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-300" />
-                </div>
-            ))}
-            <button onClick={addEntry}
-                className="w-full flex items-center justify-center gap-1.5 border border-dashed border-stone-300 rounded-xl py-2 text-xs text-stone-500 hover:border-amber-400 hover:text-amber-600 transition-colors">
-                <Plus className="w-3.5 h-3.5" /> Add Subsidy Entry
-            </button>
-        </div>
-    );
-}
+// ─── Subsidy status options ───────────────────────────────────────────────────
+const SUBSIDY_STATUS_OPTIONS = ['Pending', 'Submitted', 'Rejected', 'Redeemed', 'Disbursed'];
 
 // ─── CustomerDetailModal ──────────────────────────────────────────────────────
 export default function CustomerDetailModal({ customer, onClose, onUpdate, onDelete, user, meta }) {
@@ -183,6 +241,11 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
 
     const handleChange = (field, val) => setEditData(prev => ({ ...prev, [field]: val }));
 
+    // Payments: when changed, auto-update total_received from sum
+    const handlePaymentsChange = (newPayments, total) => {
+        setEditData(prev => ({ ...prev, payments: newPayments, total_received: total }));
+    };
+
     const handleToggleFinancialTag = async (tagId) => {
         const newTag = editData.financial_tag === tagId ? null : tagId;
         setEditData(prev => ({ ...prev, financial_tag: newTag }));
@@ -219,9 +282,10 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
         fetchLogs();
     };
 
-    const handleDelete = async () => {
-        await logActivity(user.id, 'delete', `Deleted: ${customer.customer_name}`, customer.id);
-        await onDelete(customer.id);
+    const handleSoftDelete = async () => {
+        const deletedAt = new Date().toISOString();
+        await logActivity(user.id, 'delete', `Soft-deleted: ${customer.customer_name}`, customer.id);
+        await onDelete(customer.id, deletedAt);   // pass timestamp for soft-delete
         onClose();
     };
 
@@ -268,13 +332,13 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                     </div>
                 </div>
 
-                {/* Tab navigation */}
+                {/* Tabs */}
                 <div className="flex bg-stone-900 px-6 gap-6 border-t border-white/5 flex-shrink-0">
                     {[
-                        { id: 'overview',  label: 'Overview',       icon: LayoutDashboard },
-                        { id: 'finance',   label: 'Finance & Bank', icon: IndianRupee },
-                        { id: 'checklist', label: 'Checklist',      icon: CheckSquare },
-                        { id: 'history',   label: 'Notes & History',icon: History },
+                        { id: 'overview',  label: 'Overview',        icon: LayoutDashboard },
+                        { id: 'finance',   label: 'Finance & Bank',  icon: IndianRupee },
+                        { id: 'checklist', label: 'Checklist',       icon: CheckSquare },
+                        { id: 'history',   label: 'Notes & History', icon: History },
                     ].map(tab => (
                         <button key={tab.id} onClick={() => { setActiveTab(tab.id); setEditingSection(null); }}
                             className={`flex items-center gap-2 py-3 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 ${activeTab === tab.id ? 'text-amber-400 border-amber-400' : 'text-stone-500 border-transparent hover:text-stone-300'}`}>
@@ -283,14 +347,14 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                     ))}
                 </div>
 
-                {/* Tab body */}
+                {/* Body */}
                 <div className="flex-1 overflow-y-auto p-6 bg-[#FCFBFA]">
 
                     {/* ── OVERVIEW ── */}
                     {activeTab === 'overview' && (
                         <div className="space-y-6 animate-in fade-in duration-300">
-                            {/* Stage + Financial Tag */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Stage select */}
                                 <div className="bg-white p-4 rounded-2xl border border-stone-100 shadow-sm">
                                     <label className="text-[9px] text-stone-400 font-bold uppercase mb-2 block">Primary Stage</label>
                                     <select value={editData.stage} onChange={async (e) => {
@@ -304,6 +368,7 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                                         {PRIMARY_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                                     </select>
                                 </div>
+                                {/* Financial tag */}
                                 <div className="bg-white p-4 rounded-2xl border border-stone-100 shadow-sm">
                                     <label className="text-[9px] text-stone-400 font-bold uppercase mb-2 block">Financial Tag</label>
                                     <div className="flex flex-wrap gap-1.5">
@@ -329,8 +394,8 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                                     <EditableDetailItem label="Phone"    field="phone"          value={editData.phone}          onChange={handleChange} isEditing={editingSection === 'cus'} />
                                     <EditableDetailItem label="Email"    field="email"           value={editData.email}          onChange={handleChange} isEditing={editingSection === 'cus'} />
                                     <EditableDetailItem label="Aadhar"   field="aadhar"          value={editData.aadhar}         onChange={handleChange} isEditing={editingSection === 'cus'} />
-                                    <EditableDetailItem label="POC"      field="poc"             value={editData.poc}            onChange={handleChange} options={meta['poc']} isEditing={editingSection === 'cus'} />
-                                    <EditableDetailItem label="Branch"   field="company_branch"  value={editData.company_branch} onChange={handleChange} options={meta['company_branch']} isEditing={editingSection === 'cus'} />
+                                    <EditableDetailItem label="POC"      field="poc"             value={editData.poc}            onChange={handleChange} options={meta['poc']}            category="poc"            isEditing={editingSection === 'cus'} />
+                                    <EditableDetailItem label="Branch"   field="company_branch"  value={editData.company_branch} onChange={handleChange} options={meta['company_branch']} category="company_branch" isEditing={editingSection === 'cus'} />
                                     <EditableDetailItem label="Location" field="location"        value={editData.location}       onChange={handleChange} isEditing={editingSection === 'cus'} />
                                 </div>
                             </section>
@@ -340,13 +405,13 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                                 <SectionHeader title="Project & Technical" id="pro" icon={Zap} />
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                     <EditableDetailItem label="Capacity (kWp)"  field="capacity_kwp"   value={editData.capacity_kwp}   onChange={handleChange} isEditing={editingSection === 'pro'} isEnergy />
-                                    <EditableDetailItem label="Type"            field="project_type"   value={editData.project_type}   onChange={handleChange} options={meta['project_type']} isEditing={editingSection === 'pro'} />
-                                    <EditableDetailItem label="Vendor"          field="vendor"         value={editData.vendor}         onChange={handleChange} options={meta['vendor']} isEditing={editingSection === 'pro'} />
-                                    <EditableDetailItem label="Meter Cat"       field="meter_category" value={editData.meter_category} onChange={handleChange} options={meta['meter_category']} isEditing={editingSection === 'pro'} />
+                                    <EditableDetailItem label="Type"            field="project_type"   value={editData.project_type}   onChange={handleChange} options={meta['project_type']}  category="project_type"  isEditing={editingSection === 'pro'} />
+                                    <EditableDetailItem label="Vendor"          field="vendor"         value={editData.vendor}         onChange={handleChange} options={meta['vendor']}         category="vendor"         isEditing={editingSection === 'pro'} />
+                                    <EditableDetailItem label="Meter Cat"       field="meter_category" value={editData.meter_category} onChange={handleChange} options={meta['meter_category']}category="meter_category" isEditing={editingSection === 'pro'} />
                                     <EditableDetailItem label="EB Number"       field="eb_number"      value={editData.eb_number}      onChange={handleChange} isEditing={editingSection === 'pro'} />
                                     <EditableDetailItem label="DTR Code"        field="dtr_code"       value={editData.dtr_code}       onChange={handleChange} isEditing={editingSection === 'pro'} />
                                     <EditableDetailItem label="Sanctioned Load" field="sanctioned_load"value={editData.sanctioned_load}onChange={handleChange} isEditing={editingSection === 'pro'} />
-                                    <EditableDetailItem label="DISCOM Div"      field="discom_division"value={editData.discom_division}onChange={handleChange} options={meta['discom_division']} isEditing={editingSection === 'pro'} />
+                                    <EditableDetailItem label="DISCOM Div"      field="discom_division"value={editData.discom_division}onChange={handleChange} options={meta['discom_division']} category="discom_division" isEditing={editingSection === 'pro'} />
                                 </div>
                             </section>
 
@@ -354,8 +419,8 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                             <section>
                                 <SectionHeader title="Application Links" id="links" icon={FolderOpen} />
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                    <EditableDetailItem label="Google Docs Link" field="google_docs"    value={editData.google_docs}    onChange={handleChange} isEditing={editingSection === 'links'} />
-                                    <EditableDetailItem label="Location Link"    field="location_link"  value={editData.location_link}  onChange={handleChange} isEditing={editingSection === 'links'} />
+                                    <EditableDetailItem label="Google Docs Link" field="google_docs"   value={editData.google_docs}   onChange={handleChange} isEditing={editingSection === 'links'} />
+                                    <EditableDetailItem label="Location Link"    field="location_link" value={editData.location_link}  onChange={handleChange} isEditing={editingSection === 'links'} />
                                 </div>
                             </section>
                         </div>
@@ -371,21 +436,34 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                                     <EditableDetailItem label="Received"    field="total_received"  value={editData.total_received} onChange={handleChange} type="number" isEditing={editingSection === 'fin'} isMoney />
                                     <EditableDetailItem label="Receivable"  field="receivables"     value={editData.receivables}    onChange={handleChange} type="number" isEditing={editingSection === 'fin'} isMoney />
                                     <EditableDetailItem label="Discount"    field="discount"        value={editData.discount}       onChange={handleChange} type="number" isEditing={editingSection === 'fin'} isMoney />
-                                    <EditableDetailItem label="Pay Type"    field="payment_type"    value={editData.payment_type}   onChange={handleChange} options={meta['payment_type']} isEditing={editingSection === 'fin'} />
+                                    <EditableDetailItem label="Pay Type"    field="payment_type"    value={editData.payment_type}   onChange={handleChange} options={meta['payment_type']} category="payment_type" isEditing={editingSection === 'fin'} />
                                 </div>
-                                <PaymentsEditor payments={editData.payments || []} onChange={val => handleChange('payments', val)} isEditing={editingSection === 'fin'} />
+                                <PaymentsEditor
+                                    payments={editData.payments || []}
+                                    onChange={handlePaymentsChange}
+                                    isEditing={editingSection === 'fin'}
+                                />
                             </section>
 
+                            {/* Subsidy — uses generic HistoryEntryEditor */}
                             <section>
-                                <SectionHeader title="Subsidy Status History" id="sub" icon={AlertTriangle} />
-                                <SubsidyHistoryEditor subsidyHistory={editData.subsidy_history || []} onChange={val => handleChange('subsidy_history', val)} isEditing={editingSection === 'sub'} />
+                                <SectionHeader title="Subsidy Status History" id="sub" icon={Banknote} />
+                                <HistoryEntryEditor
+                                    entries={editData.subsidy_history || []}
+                                    onChange={val => handleChange('subsidy_history', val)}
+                                    isEditing={editingSection === 'sub'}
+                                    statusOptions={SUBSIDY_STATUS_OPTIONS}
+                                    title="Subsidy Entry"
+                                    emptyText="No subsidy history recorded"
+                                />
                             </section>
 
+                            {/* Bank Info */}
                             <section>
                                 <SectionHeader title="Bank Information" id="bnk" icon={Building2} />
                                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                                     <EditableDetailItem label="Account Name"  field="customer_account_name"  value={editData.customer_account_name}  onChange={handleChange} isEditing={editingSection === 'bnk'} />
-                                    <EditableDetailItem label="Bank Name"     field="bank_name"              value={editData.bank_name}              onChange={handleChange} options={meta['bank_name']} isEditing={editingSection === 'bnk'} />
+                                    <EditableDetailItem label="Bank Name"     field="bank_name"              value={editData.bank_name}              onChange={handleChange} options={meta['bank_name']} category="bank_name" isEditing={editingSection === 'bnk'} />
                                     <EditableDetailItem label="Branch"        field="bank_branch"            value={editData.bank_branch}            onChange={handleChange} isEditing={editingSection === 'bnk'} />
                                     <EditableDetailItem label="Account #"     field="bank_account_number"    value={editData.bank_account_number}    onChange={handleChange} isEditing={editingSection === 'bnk'} />
                                     <EditableDetailItem label="IFSC Code"     field="ifsc_code"              value={editData.ifsc_code}              onChange={handleChange} isEditing={editingSection === 'bnk'} />
@@ -405,9 +483,7 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                                 </div>
                                 {checklistDirty && (
                                     <button onClick={async () => { await onUpdate(customer.id, { project_checklist: localChecklist }); setChecklistDirty(false); fetchLogs(); }}
-                                        className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-[10px] font-bold">
-                                        Save Checklist
-                                    </button>
+                                        className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-[10px] font-bold">Save Checklist</button>
                                 )}
                             </div>
                             <div className="space-y-4">
@@ -437,7 +513,6 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                     {/* ── NOTES & HISTORY ── */}
                     {activeTab === 'history' && (
                         <div className="space-y-8 animate-in fade-in duration-300">
-                            {/* Internal remarks */}
                             <section>
                                 <SectionHeader title="Internal Remarks (Staff Only)" id="rem" icon={ShieldCheck} />
                                 {editingSection === 'rem' ? (
@@ -451,7 +526,6 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                                 )}
                             </section>
 
-                            {/* Team notes */}
                             <section>
                                 <h3 className="text-[9px] font-bold text-stone-400 uppercase tracking-widest mb-6">Activity Notes</h3>
                                 <div className="space-y-3 mb-6 max-h-[300px] overflow-y-auto pr-2">
@@ -475,7 +549,6 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                                 </div>
                             </section>
 
-                            {/* System timeline */}
                             <section>
                                 <h3 className="text-[9px] font-bold text-stone-400 uppercase tracking-widest mb-6">Detailed System History</h3>
                                 <div className="space-y-4">
@@ -506,7 +579,7 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                     )}
                 </div>
 
-                {/* Footer: save bar (edit mode only) */}
+                {/* Save bar */}
                 {editingSection && (
                     <div className="p-4 border-t border-stone-100 bg-white flex-shrink-0">
                         <button onClick={handleSave} disabled={saving}
@@ -517,19 +590,21 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                 )}
             </div>
 
-            {/* Delete confirm */}
+            {/* Soft-delete confirm */}
             {showDeleteConfirm && (
                 <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4">
                     <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
                         <div className="flex items-center gap-3 mb-4">
                             <div className="p-2 bg-red-100 rounded-full"><AlertTriangle className="w-5 h-5 text-red-600" /></div>
-                            <h3 className="font-bold text-stone-800">Delete Customer?</h3>
+                            <h3 className="font-bold text-stone-800">Move to Trash?</h3>
                         </div>
-                        <p className="text-sm text-stone-600 mb-5">Are you sure you want to delete <strong>{customer.customer_name}</strong>? This cannot be undone.</p>
+                        <p className="text-sm text-stone-600 mb-5">
+                            <strong>{customer.customer_name}</strong> will be moved to Trash. You can recover it later from the Trash view.
+                        </p>
                         <div className="flex gap-3">
                             <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 py-2.5 border border-stone-300 text-stone-700 rounded-xl text-sm font-medium">Cancel</button>
-                            <button onClick={handleDelete} className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2">
-                                <Trash2 className="w-4 h-4" /> Delete
+                            <button onClick={handleSoftDelete} className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2">
+                                <Trash2 className="w-4 h-4" /> Move to Trash
                             </button>
                         </div>
                     </div>
