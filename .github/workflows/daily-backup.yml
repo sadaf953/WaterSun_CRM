@@ -3,20 +3,18 @@ name: Daily Supabase Backup
 on:
   schedule:
     - cron: '0 20 * * *'   # 8:00 PM UTC = 1:30 AM IST
-  workflow_dispatch:         # also lets you trigger manually from GitHub UI
+  workflow_dispatch:         # manual trigger for testing
 
 jobs:
   backup:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
       - name: Create backups directory
         run: mkdir -p backups
 
-      # ── Main customer table ──
+      # ── Pull data from Supabase ──────────────────────────────────────────────
+
       - name: Backup admin table (customers)
         run: |
           curl -s -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/admin?select=*" \
@@ -25,7 +23,6 @@ jobs:
             -H "Accept: text/csv" \
             -o "backups/admin_$(date +%Y-%m-%d).csv"
 
-      # ── Activity log ──
       - name: Backup activity_log table
         run: |
           curl -s -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/activity_log?select=*&order=created_at.desc&limit=5000" \
@@ -34,7 +31,6 @@ jobs:
             -H "Accept: text/csv" \
             -o "backups/activity_log_$(date +%Y-%m-%d).csv"
 
-      # ── Metadata / dropdown values ──
       - name: Backup metadata table
         run: |
           curl -s -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/metadata?select=*" \
@@ -43,10 +39,24 @@ jobs:
             -H "Accept: text/csv" \
             -o "backups/metadata_$(date +%Y-%m-%d).csv"
 
-      - name: Commit and push CSV backups
+      # ── Push CSVs to the private backup repo ────────────────────────────────
+      # BACKUP_REPO secret format: "YourGitHubUsername/your-private-backup-repo"
+      # BACKUP_PAT  secret: a Personal Access Token with repo (write) scope
+
+      - name: Clone private backup repo
         run: |
+          git clone https://x-access-token:${{ secrets.BACKUP_PAT }}@github.com/${{ secrets.BACKUP_REPO }}.git backup-repo
+
+      - name: Copy CSVs into backup repo
+        run: |
+          mkdir -p backup-repo/$(date +%Y/%m)
+          cp backups/*.csv backup-repo/$(date +%Y/%m)/
+
+      - name: Commit and push to private backup repo
+        run: |
+          cd backup-repo
           git config user.name  "backup-bot"
           git config user.email "backup-bot@users.noreply.github.com"
-          git add backups/
-          git commit -m "Daily backup $(date +%Y-%m-%d)" || echo "No changes to commit"
+          git add .
+          git commit -m "Backup $(date +'%Y-%m-%d %H:%M UTC')" || echo "Nothing new to commit"
           git push
