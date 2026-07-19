@@ -1,43 +1,52 @@
 // ─── Dashboard.jsx ────────────────────────────────────────────────────────────
 // Main admin layout: sidebar + header + view router.
-// Data fetching and CRUD handlers all live here; components are dumb receivers.
+// Features:
+//   • Trash sidebar item + soft-delete/recover/hard-delete
+//   • Global search across ALL stages (name, phone, CRN) with results overlay
+//   • Stage counts exclude deleted records
 // ──────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabase';
 import { logActivity, useMetadata, exportAllToCSV } from '../utils';
 import { PRIMARY_STAGES } from '../constants';
 
-import DashboardView      from './DashboardView';
-import FinancialView      from './FinancialView';
-import CustomerCard       from './CustomerCard';
+import DashboardView       from './DashboardView';
+import FinancialView       from './FinancialView';
+import CustomerCard        from './CustomerCard';
 import CustomerDetailModal from './CustomerDetailModal';
-import AddLeadModal       from './AddLeadModal';
-import ActivityLogView    from './ActivityLogView';
-import UserManagementView from './UserManagementView';
-import AgentForm          from './agentform';
-import SalesView          from './salesview';
+import AddLeadModal        from './AddLeadModal';
+import ActivityLogView     from './ActivityLogView';
+import UserManagementView  from './UserManagementView';
+import TrashView           from './TrashView';
+import AgentForm           from './agentform';
+import SalesView           from './salesview';
 
 import {
     LayoutDashboard, IndianRupee, Activity, UserCog, Menu, X,
-    Search, Plus, Download, LogOut, Sun,
+    Search, Plus, Download, LogOut, Sun, Trash2, Users,
 } from 'lucide-react';
 
 export default function Dashboard({ user, onLogout }) {
-    const [customers, setCustomers] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [currentView, setCurrentView] = useState('dashboard');
+    const [customers, setCustomers]         = useState([]);
+    const [loading, setLoading]             = useState(true);
+    const [currentView, setCurrentView]     = useState('dashboard');
     const [selectedStage, setSelectedStage] = useState('Leads');
-    const [searchQuery, setSearchQuery] = useState('');
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [stageSearch, setStageSearch]     = useState('');    // per-stage search
+    const [globalSearch, setGlobalSearch]   = useState('');    // global search
+    const [globalResults, setGlobalResults] = useState([]);
+    const [showGlobalDrop, setShowGlobalDrop] = useState(false);
+    const [sidebarOpen, setSidebarOpen]     = useState(false);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
-    const [showAddLead, setShowAddLead] = useState(false);
+    const [showAddLead, setShowAddLead]     = useState(false);
+    const globalSearchRef                   = useRef(null);
     const meta = useMetadata();
 
     // ── Data fetching ──────────────────────────────────────────────────────────
     const fetchData = async () => {
         setLoading(true);
-        const { data, error } = await supabase.from('admin').select('*').order('created_at', { ascending: false });
+        const { data, error } = await supabase
+            .from('admin').select('*').order('created_at', { ascending: false });
         if (!error) setCustomers(data || []);
         else console.error('Fetch error:', error);
         setLoading(false);
@@ -51,6 +60,45 @@ export default function Dashboard({ user, onLogout }) {
         return () => supabase.removeChannel(channel);
     }, []);
 
+    // Close global search dropdown when clicking outside
+    useEffect(() => {
+        const handler = (e) => {
+            if (globalSearchRef.current && !globalSearchRef.current.contains(e.target)) {
+                setShowGlobalDrop(false);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    // ── Global search: across ALL non-deleted stages ───────────────────────────
+    useEffect(() => {
+        const q = globalSearch.trim().toLowerCase();
+        if (!q) { setGlobalResults([]); setShowGlobalDrop(false); return; }
+        const active = customers.filter(c => !c.deleted_at);
+        const authorized = user.userType === 'admin'
+            ? active
+            : active.filter(c => c.poc === user.name);
+        const results = authorized.filter(c =>
+            c.customer_name?.toLowerCase().includes(q) ||
+            c.phone?.includes(globalSearch.trim()) ||
+            c.crn?.toLowerCase().includes(q)
+        ).slice(0, 8);
+        setGlobalResults(results);
+        setShowGlobalDrop(results.length > 0);
+    }, [globalSearch, customers]);
+
+    const handleGlobalSelect = (customer) => {
+        // Navigate to the customer's stage so context is clear
+        setCurrentView('stages');
+        setSelectedStage(customer.stage || 'Leads');
+        setStageSearch('');
+        // Open the detail modal
+        setSelectedCustomer(customer);
+        setGlobalSearch('');
+        setShowGlobalDrop(false);
+    };
+
     // ── CRUD ──────────────────────────────────────────────────────────────────
     const handleUpdateCustomer = async (id, updates) => {
         const { error } = await supabase.from('admin').update(updates).eq('id', id);
@@ -60,7 +108,25 @@ export default function Dashboard({ user, onLogout }) {
         }
     };
 
-    const handleDeleteCustomer = async (id) => {
+    // Soft-delete: sets deleted_at, never removes from DB
+    const handleSoftDelete = async (id, deletedAt) => {
+        const ts = deletedAt || new Date().toISOString();
+        await supabase.from('admin').update({ deleted_at: ts }).eq('id', id);
+        setCustomers(prev => prev.map(c => c.id === id ? { ...c, deleted_at: ts } : c));
+        setSelectedCustomer(null);
+    };
+
+    // Recover from trash
+    const handleRecover = async (id) => {
+        await supabase.from('admin').update({ deleted_at: null }).eq('id', id);
+        setCustomers(prev => prev.map(c => c.id === id ? { ...c, deleted_at: null } : c));
+        logActivity(user.id, 'update', `Recovered customer from trash`, id);
+    };
+
+    // Hard-delete: permanent, admin only
+    const handleHardDelete = async (id) => {
+        const c = customers.find(x => x.id === id);
+        await logActivity(user.id, 'delete', `Permanently deleted: ${c?.customer_name}`, id);
         await supabase.from('admin').delete().eq('id', id);
         setCustomers(prev => prev.filter(c => c.id !== id));
     };
@@ -83,26 +149,30 @@ export default function Dashboard({ user, onLogout }) {
         }
     };
 
-    // ── Derived data ──────────────────────────────────────────────────────────
+    // ── Derived data (active = non-deleted only) ───────────────────────────────
+    const active      = customers.filter(c => !c.deleted_at);
+    const trashed     = customers.filter(c => !!c.deleted_at);
+    const isAuthorized = (c) => user.userType === 'admin' || c.poc === user.name;
+
     const stageCounts = PRIMARY_STAGES.reduce((acc, s) => {
-        acc[s.id] = customers.filter(c => c.stage === s.id).length;
+        acc[s.id] = active.filter(c => c.stage === s.id && isAuthorized(c)).length;
         return acc;
     }, {});
-    const financialTagCount = customers.filter(c => c.financial_tag).length;
+    const financialTagCount = active.filter(c => c.financial_tag && isAuthorized(c)).length;
+    const trashCount        = trashed.length;
 
-    const filtered = customers.filter(c => {
-        const searchLower = searchQuery.toLowerCase();
-        const matchesSearch = !searchQuery ||
-            c.customer_name?.toLowerCase().includes(searchLower) ||
-            c.phone?.includes(searchQuery) ||
-            c.crn?.toLowerCase().includes(searchLower);
-        const matchesStage = c.stage === selectedStage;
-        const isAuthorized = user.userType === 'admin' || c.poc === user.name;
-        return matchesStage && matchesSearch && isAuthorized;
+    // Per-stage filtered cards
+    const filtered = active.filter(c => {
+        const q = stageSearch.toLowerCase();
+        const matchesSearch = !stageSearch ||
+            c.customer_name?.toLowerCase().includes(q) ||
+            c.phone?.includes(stageSearch) ||
+            c.crn?.toLowerCase().includes(q);
+        return c.stage === selectedStage && matchesSearch && isAuthorized(c);
     });
 
     // ── Nav button helper ─────────────────────────────────────────────────────
-    const NavBtn = ({ view, stage, icon: Icon, label, count, badgeDot }) => {
+    const NavBtn = ({ view, stage, icon: Icon, label, count, redBadge }) => {
         const isActive = view === 'stages'
             ? (currentView === 'stages' && selectedStage === stage)
             : currentView === view;
@@ -117,22 +187,24 @@ export default function Dashboard({ user, onLogout }) {
                 <Icon className="w-4 h-4 flex-shrink-0" />
                 <span className="flex-1 text-left truncate">{label}</span>
                 {count > 0 && (
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full min-w-[20px] text-center ${isActive ? 'bg-white/20 text-white' : 'bg-stone-100 text-stone-500'}`}>{count}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full min-w-[20px] text-center font-bold ${isActive ? 'bg-white/20 text-white' : redBadge ? 'bg-red-100 text-red-500' : 'bg-stone-100 text-stone-500'}`}>
+                        {count}
+                    </span>
                 )}
-                {badgeDot && count === 0 && <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />}
             </button>
         );
     };
 
     // ── Role-based routing ────────────────────────────────────────────────────
     if (user.userType === 'agent') return <AgentForm user={user} onLogout={onLogout} />;
-    if (user.userType === 'sales') return <SalesView customers={customers} loading={loading} user={user} onUpdate={handleMoveStage} />;
+    if (user.userType === 'sales') return <SalesView customers={active} loading={loading} user={user} onUpdate={handleMoveStage} />;
 
     const headerTitle =
         currentView === 'dashboard' ? 'Business Dashboard'
         : currentView === 'financial' ? 'Financial Tags'
-        : currentView === 'activity' ? 'Activity Log'
-        : currentView === 'users'    ? 'User Management'
+        : currentView === 'activity'  ? 'Activity Log'
+        : currentView === 'users'     ? 'User Management'
+        : currentView === 'trash'     ? 'Trash'
         : PRIMARY_STAGES.find(s => s.id === selectedStage)?.label || selectedStage;
 
     return (
@@ -165,12 +237,14 @@ export default function Dashboard({ user, onLogout }) {
                             <IndianRupee className="w-4 h-4 flex-shrink-0" />
                             <span className="flex-1 text-left">Financial Tags</span>
                             {financialTagCount > 0 && (
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full min-w-[20px] text-center ${currentView === 'financial' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-600'}`}>{financialTagCount}</span>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full min-w-[20px] text-center font-bold ${currentView === 'financial' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-600'}`}>
+                                    {financialTagCount}
+                                </span>
                             )}
                         </button>
                     </div>
 
-                    {/* Stages */}
+                    {/* Project Stages */}
                     <div className="text-[9px] uppercase font-bold text-stone-300 px-3 pt-4 pb-2 tracking-widest">Project Stages</div>
                     {PRIMARY_STAGES.map(s => (
                         <NavBtn key={s.id} view="stages" stage={s.id} icon={s.icon} label={s.label} count={stageCounts[s.id] || 0} />
@@ -178,10 +252,11 @@ export default function Dashboard({ user, onLogout }) {
 
                     {/* System */}
                     <div className="text-[9px] uppercase font-bold text-stone-300 px-3 pt-5 pb-2 tracking-widest">System</div>
-                    <NavBtn view="activity" icon={Activity} label="Activity Log" count={0} />
+                    <NavBtn view="activity" icon={Activity}  label="Activity Log"      count={0} />
                     {user.userType === 'admin' && (
                         <NavBtn view="users" icon={UserCog} label="User Management" count={0} />
                     )}
+                    <NavBtn view="trash" icon={Trash2} label="Trash" count={trashCount} redBadge />
                 </div>
 
                 {/* User + Logout */}
@@ -213,17 +288,51 @@ export default function Dashboard({ user, onLogout }) {
                             <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">{financialTagCount} tagged</span>
                         )}
                     </div>
+
                     <div className="flex items-center gap-2">
+                        {/* ── Global search (always visible) ── */}
+                        <div className="relative" ref={globalSearchRef}>
+                            <Search className="absolute left-3 top-2.5 text-stone-400 w-4 h-4" />
+                            <input
+                                type="text"
+                                placeholder="Search all stages..."
+                                value={globalSearch}
+                                onChange={e => setGlobalSearch(e.target.value)}
+                                onFocus={() => globalResults.length > 0 && setShowGlobalDrop(true)}
+                                className="pl-9 pr-4 py-2 bg-stone-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 w-40 lg:w-60"
+                            />
+                            {/* Results dropdown */}
+                            {showGlobalDrop && (
+                                <div className="absolute top-full mt-1 left-0 right-0 bg-white rounded-2xl shadow-xl border border-stone-100 py-1 z-50 overflow-hidden">
+                                    {globalResults.map(c => (
+                                        <button key={c.id} onClick={() => handleGlobalSelect(c)}
+                                            className="w-full px-4 py-2.5 text-left hover:bg-amber-50 transition-colors group">
+                                            <div className="flex items-center justify-between">
+                                                <p className="text-sm font-semibold text-stone-800 group-hover:text-amber-700">{c.customer_name}</p>
+                                                <span className="text-[9px] bg-stone-100 text-stone-400 px-1.5 py-0.5 rounded font-bold uppercase ml-2">{c.crn || '–'}</span>
+                                            </div>
+                                            <p className="text-[10px] text-stone-400 mt-0.5">
+                                                {PRIMARY_STAGES.find(s => s.id === c.stage)?.label || c.stage} · {c.phone || 'No phone'}
+                                            </p>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Per-stage search (only in stages view) */}
                         {currentView === 'stages' && (
-                            <div className="relative">
+                            <div className="relative hidden lg:block">
                                 <Search className="absolute left-3 top-2.5 text-stone-400 w-4 h-4" />
-                                <input type="text" placeholder="Search name, phone, CRN..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-                                    className="pl-9 pr-4 py-2 bg-stone-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 w-40 lg:w-56" />
+                                <input type="text" placeholder="Filter this stage..." value={stageSearch}
+                                    onChange={e => setStageSearch(e.target.value)}
+                                    className="pl-9 pr-4 py-2 bg-stone-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 w-40" />
                             </div>
                         )}
+
                         {user.userType === 'admin' && (
                             <>
-                                <button onClick={() => exportAllToCSV(customers)}
+                                <button onClick={() => exportAllToCSV(active)}
                                     className="flex items-center gap-1.5 border border-stone-200 text-stone-600 px-3 py-2 rounded-xl text-sm font-medium hover:bg-stone-50 transition-colors">
                                     <Download className="w-4 h-4" />
                                     <span className="hidden sm:inline text-xs">Export</span>
@@ -240,10 +349,22 @@ export default function Dashboard({ user, onLogout }) {
 
                 {/* View router */}
                 <div className="flex-1 p-4 lg:p-6">
-                    {currentView === 'dashboard'  && <DashboardView customers={customers} loading={loading} />}
-                    {currentView === 'financial'  && <FinancialView customers={customers} onSelectCustomer={setSelectedCustomer} />}
-                    {currentView === 'activity'   && <ActivityLogView />}
+                    {currentView === 'dashboard' && <DashboardView customers={active} loading={loading} />}
+                    {currentView === 'financial' && <FinancialView customers={active} onSelectCustomer={setSelectedCustomer} />}
+                    {currentView === 'activity'  && <ActivityLogView />}
                     {currentView === 'users' && user.userType === 'admin' && <UserManagementView currentUser={user} />}
+
+                    {/* Trash view */}
+                    {currentView === 'trash' && (
+                        <TrashView
+                            trashedCustomers={trashed}
+                            onRecover={handleRecover}
+                            onHardDelete={handleHardDelete}
+                            isAdmin={user.userType === 'admin'}
+                        />
+                    )}
+
+                    {/* Stage grid */}
                     {currentView === 'stages' && (
                         loading ? (
                             <div className="flex items-center justify-center h-64">
@@ -257,8 +378,9 @@ export default function Dashboard({ user, onLogout }) {
                             </div>
                         ) : (
                             <div className="flex flex-col items-center justify-center h-64 text-stone-400">
-                                <p className="font-medium text-stone-500">{searchQuery ? 'No matching results' : 'No customers in this stage'}</p>
-                                <p className="text-sm mt-1">{searchQuery ? 'Try a different search' : 'Move customers here or add a new lead'}</p>
+                                <Users className="w-12 h-12 mb-3 text-stone-200" />
+                                <p className="font-medium text-stone-500">{stageSearch ? 'No matching results in this stage' : 'No customers in this stage'}</p>
+                                <p className="text-sm mt-1">{stageSearch ? 'Try the global search bar to find across all stages' : 'Move customers here or add a new lead'}</p>
                             </div>
                         )
                     )}
@@ -271,7 +393,7 @@ export default function Dashboard({ user, onLogout }) {
                     customer={selectedCustomer}
                     onClose={() => setSelectedCustomer(null)}
                     onUpdate={handleUpdateCustomer}
-                    onDelete={handleDeleteCustomer}
+                    onDelete={handleSoftDelete}
                     user={user}
                     meta={meta}
                 />
