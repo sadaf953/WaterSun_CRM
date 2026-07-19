@@ -239,11 +239,35 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
         fetchLogs();
     }, [customer.id]);
 
-    const handleChange = (field, val) => setEditData(prev => ({ ...prev, [field]: val }));
+    // ── Auto-recalculate receivables whenever money fields change ──────────────
+    // receivables = quoted_amount − discount − total_received  (floor 0)
+    const recalcFinancials = (patch, current) => {
+        const merged = { ...current, ...patch };
+        const quoted   = Number(merged.quoted_amount)  || 0;
+        const discount = Number(merged.discount)        || 0;
+        const received = Number(merged.total_received)  || 0;
+        const receivables = Math.max(0, quoted - discount - received);
+        return { ...patch, receivables };
+    };
 
-    // Payments: when changed, auto-update total_received from sum
+    const handleChange = (field, val) => {
+        const FINANCE_FIELDS = ['quoted_amount', 'discount', 'total_received'];
+        if (FINANCE_FIELDS.includes(field)) {
+            setEditData(prev => {
+                const patch = recalcFinancials({ [field]: val }, prev);
+                return { ...prev, ...patch };
+            });
+        } else {
+            setEditData(prev => ({ ...prev, [field]: val }));
+        }
+    };
+
+    // Payments: auto-update total_received from sum AND recalc receivables
     const handlePaymentsChange = (newPayments, total) => {
-        setEditData(prev => ({ ...prev, payments: newPayments, total_received: total }));
+        setEditData(prev => {
+            const patch = recalcFinancials({ payments: newPayments, total_received: total }, prev);
+            return { ...prev, ...patch };
+        });
     };
 
     const handleToggleFinancialTag = async (tagId) => {
