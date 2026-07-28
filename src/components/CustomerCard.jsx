@@ -5,10 +5,11 @@
 // ──────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef } from 'react';
-import { Zap, MapPin, User, Building2, Package, FolderOpen, ChevronDown } from 'lucide-react';
+import { Zap, MapPin, User, Building2, Package, FolderOpen, ChevronDown, Lock, ShieldCheck } from 'lucide-react';
 import { PRIMARY_STAGES, FINANCIAL_TAGS, FINANCIAL_TAG_COLORS } from '../constants';
+import { formatINRCompact } from '../utils';
 
-export default function CustomerCard({ customer, onSelect, onMoveStage }) {
+export default function CustomerCard({ customer, onSelect, onMoveStage, isAdmin }) {
     const [showStageMenu, setShowStageMenu] = useState(false);
     const dropdownRef = useRef(null);
 
@@ -26,9 +27,10 @@ export default function CustomerCard({ customer, onSelect, onMoveStage }) {
     const balance   = quotedAmt - totalPaid;
     const tagInfo   = FINANCIAL_TAGS.find(f => f.id === customer.financial_tag);
     const tagColors = customer.financial_tag ? (FINANCIAL_TAG_COLORS[customer.financial_tag] || {}) : {};
+    const isFrozen = customer.stage === 'Completed' && !isAdmin;
 
     return (
-        <div className="bg-white rounded-2xl border border-stone-100 shadow-sm hover:shadow-md transition-all border-l-4 border-l-amber-400 group flex flex-col">
+        <div className={`rounded-2xl border shadow-sm hover:shadow-md transition-all border-l-4 group flex flex-col ${isFrozen ? 'bg-stone-50/80 border-stone-200 border-l-emerald-500 opacity-80' : 'bg-white border-stone-100 border-l-amber-400'}`}>
             {/* Clickable top section */}
             <div className="p-5 cursor-pointer flex-1" onClick={() => onSelect(customer)}>
                 <div className="flex justify-between items-start mb-3">
@@ -87,16 +89,16 @@ export default function CustomerCard({ customer, onSelect, onMoveStage }) {
                 <div className="grid grid-cols-3 gap-0 divide-x divide-stone-100 px-1 py-3">
                     <div className="text-center px-2">
                         <p className="text-[9px] font-bold text-stone-400 uppercase tracking-wide">Quoted</p>
-                        <p className="text-xs font-bold text-stone-700 mt-0.5">₹{(quotedAmt / 1000).toFixed(0)}k</p>
+                        <p className="text-xs font-bold text-stone-700 mt-0.5">{formatINRCompact(quotedAmt)}</p>
                     </div>
                     <div className="text-center px-2">
                         <p className="text-[9px] font-bold text-stone-400 uppercase tracking-wide">Received</p>
-                        <p className="text-xs font-bold text-emerald-600 mt-0.5">₹{(totalPaid / 1000).toFixed(0)}k</p>
+                        <p className="text-xs font-bold text-emerald-600 mt-0.5">{formatINRCompact(totalPaid)}</p>
                     </div>
                     <div className="text-center px-2">
                         <p className="text-[9px] font-bold text-stone-400 uppercase tracking-wide">Balance</p>
                         <p className={`text-xs font-bold mt-0.5 ${balance > 0 ? 'text-orange-500' : 'text-emerald-500'}`}>
-                            ₹{(balance / 1000).toFixed(0)}k
+                            {formatINRCompact(balance)}
                         </p>
                     </div>
                 </div>
@@ -122,25 +124,35 @@ export default function CustomerCard({ customer, onSelect, onMoveStage }) {
 
                 {/* Stage move dropdown */}
                 <div className="px-4 pb-4 pt-2 border-t border-stone-100">
-                    <div className="relative" ref={dropdownRef}>
-                        <button onClick={() => setShowStageMenu(!showStageMenu)}
-                            className="w-full flex items-center justify-between bg-white hover:bg-stone-100 border border-stone-200 rounded-xl px-3 py-2 text-xs text-stone-600 font-semibold transition-colors">
-                            <span className="truncate">{PRIMARY_STAGES.find(s => s.id === customer.stage)?.label || customer.stage || 'Move to Stage'}</span>
-                            <ChevronDown className={`w-4 h-4 flex-shrink-0 ml-1 transition-transform ${showStageMenu ? 'rotate-180' : ''}`} />
-                        </button>
-                        {showStageMenu && (
-                            <div className="absolute bottom-full left-0 right-0 mb-1 bg-white rounded-xl shadow-xl border border-stone-100 py-1 z-20 max-h-64 overflow-y-auto">
-                                {PRIMARY_STAGES.map(stage => (
-                                    <button key={stage.id}
-                                        onClick={() => { onMoveStage(customer.id, stage.id); setShowStageMenu(false); }}
-                                        className={`w-full px-3 py-2 text-left text-xs flex items-center gap-2 hover:bg-stone-50 transition-colors ${customer.stage === stage.id ? 'bg-amber-50 font-bold text-amber-700' : 'text-stone-600'}`}>
-                                        <stage.icon className="w-3.5 h-3.5 text-stone-400 flex-shrink-0" />
-                                        {stage.label}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
+                    {isFrozen ? (
+                        <div className="w-full flex items-center justify-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-xs text-emerald-600 font-bold">
+                            <Lock className="w-3.5 h-3.5" />
+                            <span>Completed · Frozen</span>
+                        </div>
+                    ) : (
+                        <div className="relative" ref={dropdownRef}>
+                            <button onClick={() => setShowStageMenu(!showStageMenu)}
+                                className={`w-full flex items-center justify-between border rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${customer.stage === 'Completed' ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-700' : 'bg-white hover:bg-stone-100 border-stone-200 text-stone-600'}`}>
+                                <span className="flex items-center gap-1.5 truncate">
+                                    {customer.stage === 'Completed' && <ShieldCheck className="w-3.5 h-3.5" />}
+                                    {PRIMARY_STAGES.find(s => s.id === customer.stage)?.label || customer.stage || 'Move to Stage'}
+                                </span>
+                                <ChevronDown className={`w-4 h-4 flex-shrink-0 ml-1 transition-transform ${showStageMenu ? 'rotate-180' : ''}`} />
+                            </button>
+                            {showStageMenu && (
+                                <div className="absolute bottom-full left-0 right-0 mb-1 bg-white rounded-xl shadow-xl border border-stone-100 py-1 z-20 max-h-64 overflow-y-auto">
+                                    {PRIMARY_STAGES.map(stage => (
+                                        <button key={stage.id}
+                                            onClick={() => { onMoveStage(customer.id, stage.id); setShowStageMenu(false); }}
+                                            className={`w-full px-3 py-2 text-left text-xs flex items-center gap-2 hover:bg-stone-50 transition-colors ${customer.stage === stage.id ? 'bg-amber-50 font-bold text-amber-700' : 'text-stone-600'}`}>
+                                            <stage.icon className="w-3.5 h-3.5 text-stone-400 flex-shrink-0" />
+                                            {stage.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

@@ -75,6 +75,54 @@ export function exportAllToCSV(customers) {
     URL.revokeObjectURL(url);
 }
 
+// ─── Indian Number System Formatters ──────────────────────────────────────────
+// Indian comma system: 1,00,000  (lakhs), 1,00,00,000 (crores)
+
+/** Format a number with Indian commas (no ₹ symbol). e.g. 123456 → "1,23,456" */
+export function toIndianCommas(val) {
+    const n = Number(String(val).replace(/,/g, ''));
+    if (isNaN(n) || val === '' || val == null) return '';
+    const [intPart, decPart] = n.toString().split('.');
+    // Indian grouping: last 3 digits, then groups of 2
+    const lastThree = intPart.slice(-3);
+    const rest = intPart.slice(0, -3);
+    const formatted = rest.replace(/\B(?=(\d{2})+(?!\d))/g, ',') + (rest ? ',' : '') + lastThree;
+    return decPart !== undefined ? `${formatted}.${decPart}` : formatted;
+}
+
+/** Format as ₹ with Indian commas. e.g. 123456 → "₹1,23,456". Returns '–' for empty. */
+export function formatINR(val) {
+    const n = Number(val);
+    if (!val || isNaN(n)) return '–';
+    return '₹' + toIndianCommas(n);
+}
+
+/** Compact Indian format: ₹1.23L, ₹2.50Cr. Falls back to full ₹ format for < 1L. */
+export function formatINRCompact(val) {
+    const n = Number(val) || 0;
+    if (n >= 1_00_00_000) return `₹${(n / 1_00_00_000).toFixed(2)} Cr`;
+    if (n >= 1_00_000) return `₹${(n / 1_00_000).toFixed(2)} L`;
+    if (n >= 1_000) return `₹${(n / 1_000).toFixed(1)}k`;
+    return '₹' + toIndianCommas(n);
+}
+
+/** Strip commas from an Indian-formatted string → raw number for DB storage. */
+export function parseIndianNumber(str) {
+    if (str === '' || str == null) return '';
+    const cleaned = String(str).replace(/,/g, '');
+    const n = Number(cleaned);
+    return isNaN(n) ? '' : n;
+}
+
+/** Live-format a typed value with Indian commas. Used in onChange for money inputs. */
+export function formatInputValue(val) {
+    const str = String(val).replace(/[^0-9.]/g, '');
+    if (str === '' || str === '.') return str;
+    // Don't format if user is still typing decimals
+    if (str.endsWith('.')) return toIndianCommas(str.split('.')[0]) + '.';
+    return toIndianCommas(str);
+}
+
 // ─── Date / Number Formatters ─────────────────────────────────────────────────
 export function formatLogDate(dateStr) {
     return new Date(dateStr).toLocaleString('en-IN', {

@@ -373,7 +373,7 @@ export default function Dashboard({ user, onLogout }) {
                         ) : filtered.length > 0 ? (
                             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
                                 {filtered.map(c => (
-                                    <CustomerCard key={c.id} customer={c} onSelect={setSelectedCustomer} onMoveStage={handleMoveStage} />
+                                    <CustomerCard key={c.id} customer={c} onSelect={setSelectedCustomer} onMoveStage={handleMoveStage} isAdmin={user.userType === 'admin'} />
                                 ))}
                             </div>
                         ) : (

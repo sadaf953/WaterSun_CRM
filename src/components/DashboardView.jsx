@@ -8,13 +8,9 @@
 
 import { FolderOpen, Activity, CheckCircle2 } from 'lucide-react';
 import { PRIMARY_STAGES } from '../constants';
+import { formatINR, formatINRCompact, toIndianCommas } from '../utils';
 
-function fmtLakh(val) {
-    const n = Number(val) || 0;
-    if (n >= 10_00_000) return `₹${(n / 10_00_000).toFixed(2)} Cr`;
-    if (n >= 1_00_000)  return `₹${(n / 1_00_000).toFixed(2)} L`;
-    return `₹${n.toLocaleString('en-IN')}`;
-}
+const fmtLakh = formatINRCompact;
 
 const MetricBox = ({ label, value, sub, icon: Icon, color }) => {
     const colorMap = {
@@ -66,17 +62,17 @@ export default function DashboardView({ customers = [], loading }) {
                 <div className="bg-white p-6 rounded-[28px] border border-stone-100 shadow-sm">
                     <p className="text-[9px] font-bold text-stone-400 uppercase tracking-widest mb-1">Total Sales (Quoted)</p>
                     <p className="text-2xl font-bold text-stone-800">{fmtLakh(totalQuoted)}</p>
-                    <p className="text-xs text-stone-400 mt-1">₹{totalQuoted.toLocaleString('en-IN')}</p>
+                    <p className="text-xs text-stone-400 mt-1">₹{toIndianCommas(totalQuoted)}</p>
                 </div>
                 <div className="bg-white p-6 rounded-[28px] border border-stone-100 shadow-sm">
                     <p className="text-[9px] font-bold text-stone-400 uppercase tracking-widest mb-1">Cash Collected</p>
                     <p className="text-2xl font-bold text-emerald-600">{fmtLakh(totalReceived)}</p>
-                    <p className="text-xs text-stone-400 mt-1">₹{totalReceived.toLocaleString('en-IN')}</p>
+                    <p className="text-xs text-stone-400 mt-1">₹{toIndianCommas(totalReceived)}</p>
                 </div>
                 <div className="bg-white p-6 rounded-[28px] border border-stone-100 shadow-sm border-b-4 border-b-orange-400">
                     <p className="text-[9px] font-bold text-stone-400 uppercase tracking-widest mb-1">Outstanding Dues</p>
                     <p className="text-2xl font-bold text-orange-600">{fmtLakh(totalDues)}</p>
-                    <p className="text-xs text-stone-400 mt-1">₹{totalDues.toLocaleString('en-IN')}</p>
+                    <p className="text-xs text-stone-400 mt-1">₹{toIndianCommas(totalDues)}</p>
                 </div>
             </div>
 

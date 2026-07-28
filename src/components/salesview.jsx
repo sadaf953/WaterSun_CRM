@@ -3,8 +3,9 @@ import {
     MapPin, Phone, Zap, IndianRupee, ChevronDown, Send, X,
     MessageSquare, Edit3, Save, Search, User, Mail, Building2,
     CreditCard, Gauge, FileText, Clock, CheckCircle2, Users,
-    ShoppingCart, Package, Wrench, Banknote, ClipboardCheck, FolderOpen
+    ShoppingCart, Package, Wrench, Banknote, ClipboardCheck, FolderOpen, Lock
 } from 'lucide-react';
+import { formatINR, toIndianCommas, parseIndianNumber } from '../utils';
 
 const STAGES = [
     { id: 'leads',                  label: 'Leads',                icon: Users },
@@ -52,14 +53,15 @@ function FieldRow({ label, value, icon: Icon, isMoney, isEnergy }) {
             {Icon && <Icon className="w-3.5 h-3.5 text-gray-400 mt-0.5 flex-shrink-0" />}
             <span className="text-[10px] text-gray-400 w-24 flex-shrink-0 mt-0.5">{label}</span>
             <span className={`text-xs font-medium flex-1 ${isMoney ? 'text-emerald-600' : isEnergy ? 'text-blue-600' : 'text-gray-800'}`}>
-                {isMoney && value ? `₹${Number(value).toLocaleString('en-IN')}` : value}
+                {isMoney && value ? formatINR(value) : value}
             </span>
         </div>
     );
 }
 
 // ─── Editable Input ───────────────────────────────────────────────────────────
-function EditInput({ label, value, onChange, type = 'text', options, textarea }) {
+function EditInput({ label, value, onChange, type = 'text', options, textarea, isMoney }) {
+    const isMoneyField = isMoney || (type === 'number' && /₹|amount|quote|cost|price|payment|receivable|discount/i.test(label));
     return (
         <div className="mb-3">
             <label className="block text-[10px] text-gray-400 mb-1 uppercase tracking-wide">{label}</label>
@@ -72,6 +74,10 @@ function EditInput({ label, value, onChange, type = 'text', options, textarea })
             ) : textarea ? (
                 <textarea value={value || ''} onChange={e => onChange(e.target.value)} rows={2}
                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:ring-2 focus:ring-gray-400 focus:outline-none resize-none" />
+            ) : isMoneyField ? (
+                <input type="text" inputMode="decimal" value={value ? toIndianCommas(value) : ''}
+                    onChange={e => onChange(parseIndianNumber(e.target.value))}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:ring-2 focus:ring-gray-400 focus:outline-none" />
             ) : (
                 <input type={type} value={value || ''} onChange={e => onChange(type === 'number' ? Number(e.target.value) : e.target.value)}
                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:ring-2 focus:ring-gray-400 focus:outline-none" />
@@ -111,6 +117,7 @@ function CustomerSheet({ customer, onClose, onUpdate, userName }) {
     };
 
     const stageLabel = STAGES.find(s => s.id === customer.stage)?.label || customer.stage;
+    const isFrozen = customer.stage === 'completed';
 
     return (
         <div className="fixed inset-0 z-50 flex flex-col justify-end" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={onClose}>
@@ -135,13 +142,19 @@ function CustomerSheet({ customer, onClose, onUpdate, userName }) {
                     {/* Stage selector */}
                     <div className="mt-3 flex items-center gap-2">
                         <span className="text-[10px] text-gray-400 uppercase tracking-wide">Stage</span>
-                        <select
-                            value={editData.stage}
-                            onChange={e => { set('stage', e.target.value); onUpdate(customer.id, { stage: e.target.value }); }}
-                            className={`flex-1 px-2 py-1 rounded-lg text-xs font-semibold border focus:outline-none ${STAGE_COLORS[editData.stage] || 'bg-gray-100 text-gray-700'}`}
-                        >
-                            {STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-                        </select>
+                        {isFrozen ? (
+                            <div className="flex-1 flex items-center gap-1.5 px-2 py-1 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-bold text-emerald-700">
+                                <Lock className="w-3 h-3" /> {stageLabel} · Frozen
+                            </div>
+                        ) : (
+                            <select
+                                value={editData.stage}
+                                onChange={e => { set('stage', e.target.value); onUpdate(customer.id, { stage: e.target.value }); }}
+                                className={`flex-1 px-2 py-1 rounded-lg text-xs font-semibold border focus:outline-none ${STAGE_COLORS[editData.stage] || 'bg-gray-100 text-gray-700'}`}
+                            >
+                                {STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                            </select>
+                        )}
                     </div>
                 </div>
 
@@ -285,8 +298,8 @@ function CustomerSheet({ customer, onClose, onUpdate, userName }) {
                                 </button>
                             </div>
                         ) : (
-                            <button onClick={() => setIsEditing(true)}
-                                className="w-full py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium flex items-center justify-center gap-2 hover:bg-gray-50">
+                            <button onClick={() => !isFrozen && setIsEditing(true)} disabled={isFrozen}
+                                className="w-full py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium flex items-center justify-center gap-2 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
                                 <Edit3 className="w-4 h-4" /> Edit Details
                             </button>
                         )}
@@ -334,7 +347,7 @@ function SalesCard({ customer, onSelect }) {
                 </span>
                 <span className="text-sm font-bold text-emerald-600 flex items-center gap-0.5">
                     <IndianRupee className="w-3.5 h-3.5" />
-                    {customer.total_cost ? Number(customer.total_cost).toLocaleString('en-IN') : '–'}
+                    {customer.total_cost ? toIndianCommas(customer.total_cost) : '–'}
                 </span>
             </div>
 

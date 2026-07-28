@@ -4,6 +4,7 @@ import {
     User, Phone, Mail, MapPin, Zap, Building2,
     CheckCircle2, ChevronRight, LogOut, Loader2, AlertCircle
 } from 'lucide-react';
+import { toIndianCommas, parseIndianNumber } from '../utils';
 
 const BRANCHES = ['Srikalahasti', 'Tirupati', 'Tada', 'Puttur', 'Nagari', 'Pichatur'];
 const PROJECT_TYPES = ['On-Grid', 'Off-Grid', 'Hybrid'];
@@ -223,8 +224,9 @@ export default function AgentForm({ user, onLogout }) {
                     </Field>
 
                     <Field label="Quoted Amount (₹)">
-                        <input type="number" value={form.quoted_amount} onChange={e => set('quoted_amount', e.target.value)}
-                            placeholder="e.g. 500000" min="0" className={inputClass('quoted_amount')} />
+                        <input type="text" inputMode="decimal" value={form.quoted_amount ? toIndianCommas(form.quoted_amount) : ''}
+                            onChange={e => set('quoted_amount', parseIndianNumber(e.target.value))}
+                            placeholder="e.g. 5,00,000" className={inputClass('quoted_amount')} />
                     </Field>
 
                     <Field label="System Type">

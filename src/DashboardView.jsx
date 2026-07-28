@@ -1,5 +1,6 @@
 import React from 'react';
 import { Users, Zap, IndianRupee, Wallet, Target, ChevronRight, Activity, TrendingUp } from 'lucide-react';
+import { formatINRCompact, toIndianCommas } from './utils';
 
 export default function DashboardView({ customers = [], loading }) {
     if (loading) return <div className="p-20 text-center animate-pulse text-gray-400 font-bold uppercase tracking-widest">Analyzing Data...</div>;
@@ -20,8 +21,8 @@ export default function DashboardView({ customers = [], loading }) {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <StatCard label="Live Projects" value={customers.length} icon={Users} color="blue" />
                 <StatCard label="Total Capacity" value={`${totalCapacity.toFixed(1)} kWp`} icon={Zap} color="amber" />
-                <StatCard label="Total Revenue" value={`₹${(totalRevenue/100000).toFixed(1)}L`} icon={IndianRupee} color="emerald" />
-                <StatCard label="Outstanding" value={`₹${(receivables/100000).toFixed(1)}L`} icon={Wallet} color="rose" />
+                <StatCard label="Total Revenue" value={formatINRCompact(totalRevenue)} icon={IndianRupee} color="emerald" />
+                <StatCard label="Outstanding" value={formatINRCompact(receivables)} icon={Wallet} color="rose" />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -62,7 +63,7 @@ export default function DashboardView({ customers = [], loading }) {
                         <div className="space-y-4">
                             <div className="flex justify-between items-center border-b border-white/10 pb-4">
                                 <span className="text-sm text-gray-400 font-medium">Total Collected</span>
-                                <span className="font-bold">₹{(totalCollected/100000).toFixed(2)}L</span>
+                                <span className="font-bold">{formatINRCompact(totalCollected)}</span>
                             </div>
                             <div className="flex justify-between items-center border-b border-white/10 pb-4">
                                 <span className="text-sm text-gray-400 font-medium">Completed Projects</span>

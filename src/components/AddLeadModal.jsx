@@ -10,6 +10,7 @@
 import { useState } from 'react';
 import { X, Plus } from 'lucide-react';
 import { DEFAULT_LEAD_FORM, DEFAULT_PROJECT_CHECKLIST } from '../models';
+import { toIndianCommas, parseIndianNumber } from '../utils';
 
 // Static text/number inputs
 const STATIC_FIELDS = [
@@ -18,7 +19,7 @@ const STATIC_FIELDS = [
     { label: 'Email',           field: 'email',          type: 'email' },
     { label: 'Location',        field: 'location',       type: 'text' },
     { label: 'Capacity (kWp)',  field: 'capacity_kwp',   type: 'number' },
-    { label: 'Quoted Amount (₹)', field: 'quoted_amount', type: 'number' },
+    { label: 'Quoted Amount (₹)', field: 'quoted_amount', type: 'money' },
 ];
 
 // Metadata-driven dropdowns — category must match Supabase 'metadata' table
@@ -63,8 +64,15 @@ export default function AddLeadModal({ onClose, onSave, meta }) {
                     {STATIC_FIELDS.map(({ label, field, type }) => (
                         <div key={field}>
                             <label className="block text-xs font-medium text-stone-600 mb-1">{label}</label>
-                            <input type={type} value={form[field]} onChange={e => set(field, e.target.value)}
-                                className="w-full px-3 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300" />
+                            {type === 'money' ? (
+                                <input type="text" inputMode="decimal" value={form[field] ? toIndianCommas(form[field]) : ''}
+                                    onChange={e => set(field, parseIndianNumber(e.target.value))}
+                                    placeholder="e.g. 5,00,000"
+                                    className="w-full px-3 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300" />
+                            ) : (
+                                <input type={type} value={form[field]} onChange={e => set(field, e.target.value)}
+                                    className="w-full px-3 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300" />
+                            )}
                         </div>
                     ))}
 

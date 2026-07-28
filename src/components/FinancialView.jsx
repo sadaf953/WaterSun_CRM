@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import { Tag } from 'lucide-react';
 import { FINANCIAL_TAGS, FINANCIAL_TAG_COLORS } from '../constants';
+import { formatINRCompact, toIndianCommas } from '../utils';
 
 export default function FinancialView({ customers, onSelectCustomer }) {
     const [activeFilter, setActiveFilter] = useState(null);
@@ -38,15 +39,15 @@ export default function FinancialView({ customers, onSelectCustomer }) {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="bg-white rounded-2xl p-4 border border-stone-100 shadow-sm">
                     <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1">Total Quoted</p>
-                    <p className="text-2xl font-bold text-stone-800">₹{(totals.quoted / 100000).toFixed(2)}L</p>
+                    <p className="text-2xl font-bold text-stone-800">{formatINRCompact(totals.quoted)}</p>
                 </div>
                 <div className="bg-white rounded-2xl p-4 border border-stone-100 shadow-sm">
                     <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1">Total Received</p>
-                    <p className="text-2xl font-bold text-emerald-600">₹{(totals.received / 100000).toFixed(2)}L</p>
+                    <p className="text-2xl font-bold text-emerald-600">{formatINRCompact(totals.received)}</p>
                 </div>
                 <div className="bg-white rounded-2xl p-4 border border-stone-100 shadow-sm border-b-4 border-b-orange-400">
                     <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1">Total Receivable</p>
-                    <p className="text-2xl font-bold text-orange-600">₹{(totals.receivable / 100000).toFixed(2)}L</p>
+                    <p className="text-2xl font-bold text-orange-600">{formatINRCompact(totals.receivable)}</p>
                 </div>
             </div>
 
@@ -100,15 +101,15 @@ export default function FinancialView({ customers, onSelectCustomer }) {
                                         <div className="grid grid-cols-3 gap-2 pt-2 border-t border-stone-50">
                                             <div>
                                                 <p className="text-[9px] text-stone-400 font-bold uppercase">Quoted</p>
-                                                <p className="text-xs font-bold text-stone-700">₹{(Number(c.quoted_amount || 0) / 1000).toFixed(0)}k</p>
+                                                <p className="text-xs font-bold text-stone-700">{formatINRCompact(c.quoted_amount)}</p>
                                             </div>
                                             <div>
                                                 <p className="text-[9px] text-stone-400 font-bold uppercase">Received</p>
-                                                <p className="text-xs font-bold text-emerald-600">₹{(totalRec / 1000).toFixed(0)}k</p>
+                                                <p className="text-xs font-bold text-emerald-600">{formatINRCompact(totalRec)}</p>
                                             </div>
                                             <div>
                                                 <p className="text-[9px] text-stone-400 font-bold uppercase">Pending</p>
-                                                <p className={`text-xs font-bold ${recv > 0 ? 'text-orange-500' : 'text-emerald-500'}`}>₹{(recv / 1000).toFixed(0)}k</p>
+                                                <p className={`text-xs font-bold ${recv > 0 ? 'text-orange-500' : 'text-emerald-500'}`}>{formatINRCompact(recv)}</p>
                                             </div>
                                         </div>
                                     </button>

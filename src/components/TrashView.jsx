@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import { Trash2, RotateCcw, Eye, AlertTriangle, X } from 'lucide-react';
 import { PRIMARY_STAGES, FINANCIAL_TAG_COLORS, FINANCIAL_TAGS } from '../constants';
+import { formatINR } from '../utils';
 
 function formatDate(d) {
     if (!d) return '–';
@@ -40,8 +41,8 @@ function TrashDetailDrawer({ customer, onClose }) {
                         ['Capacity',         customer.capacity_kwp ? `${customer.capacity_kwp} kWp` : null],
                         ['Project Type',     customer.project_type],
                         ['Stage at Deletion',PRIMARY_STAGES.find(s => s.id === customer.stage)?.label || customer.stage],
-                        ['Quoted Amount',    customer.quoted_amount ? `₹${Number(customer.quoted_amount).toLocaleString('en-IN')}` : null],
-                        ['Total Received',   customer.total_received ? `₹${Number(customer.total_received).toLocaleString('en-IN')}` : null],
+                        ['Quoted Amount',    customer.quoted_amount ? formatINR(customer.quoted_amount) : null],
+                        ['Total Received',   customer.total_received ? formatINR(customer.total_received) : null],
                     ].map(([label, val]) => val ? (
                         <div key={label} className="flex justify-between text-sm">
                             <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wide">{label}</span>

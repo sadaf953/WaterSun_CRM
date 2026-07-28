@@ -13,20 +13,16 @@ import { useState, useEffect } from 'react';
 import {
     X, Edit3, Trash2, Save, Send, AlertTriangle, CheckSquare,
     User, Zap, IndianRupee, Building2, FolderOpen, MapPin,
-    LayoutDashboard, History, Plus, ShieldCheck, Banknote,
+    LayoutDashboard, History, Plus, ShieldCheck, Banknote, Lock, Unlock,
 } from 'lucide-react';
 import { PRIMARY_STAGES, FINANCIAL_TAGS, FINANCIAL_TAG_COLORS } from '../constants';
 import { normalizeChecklist } from '../models';
-import { logActivity, formatLogDate } from '../utils';
+import { logActivity, formatLogDate, formatINR, toIndianCommas, formatInputValue, parseIndianNumber } from '../utils';
 import { supabase } from '../supabase';
 import HistoryEntryEditor from './HistoryEntryEditor';
 
-// ─── formatMoney: Indian comma system (₹1,00,000) ────────────────────────────
-function fmt(val) {
-    const n = Number(val);
-    if (!val || isNaN(n)) return '–';
-    return '₹' + n.toLocaleString('en-IN');
-}
+// ─── formatMoney: uses centralized Indian comma system from utils ─────────────
+const fmt = formatINR;
 
 // ─── MetaSelect: dropdown that lets the user type+add a new option ───────────
 // Adds the new value to the Supabase metadata table automatically.
@@ -118,6 +114,10 @@ function EditableDetailItem({ label, field, value, onChange, type = 'text', isMo
                     <option value="">Select...</option>
                     {options.map(o => <option key={o}>{o}</option>)}
                 </select>
+            ) : isMoney ? (
+                <input type="text" inputMode="decimal" value={value ? toIndianCommas(value) : ''}
+                    onChange={e => onChange(field, parseIndianNumber(e.target.value))}
+                    className="w-full bg-white border border-stone-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-300" />
             ) : (
                 <input type={type} value={value || ''} onChange={e => onChange(field, e.target.value)}
                     className="w-full bg-white border border-stone-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-300" />
@@ -154,7 +154,7 @@ function PaymentsEditor({ payments = [], onChange, isEditing }) {
                 <div key={i} className="bg-stone-50 p-3 rounded-xl flex justify-between items-center">
                     <div>
                         <p className="text-[9px] text-stone-400 font-bold uppercase">Payment {p.no || i + 1}</p>
-                        <p className="text-sm font-semibold text-emerald-600">₹{Number(p.amount || 0).toLocaleString('en-IN')}</p>
+                        <p className="text-sm font-semibold text-emerald-600">{formatINR(p.amount)}</p>
                     </div>
                     {p.date && <p className="text-xs text-stone-400">{p.date}</p>}
                 </div>
@@ -162,7 +162,7 @@ function PaymentsEditor({ payments = [], onChange, isEditing }) {
             {payments.length > 0 && (
                 <div className="bg-emerald-50 rounded-xl p-3 flex justify-between items-center border border-emerald-100">
                     <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wide">Total Received</p>
-                    <p className="text-sm font-bold text-emerald-700">₹{displayTotal.toLocaleString('en-IN')}</p>
+                    <p className="text-sm font-bold text-emerald-700">{formatINR(displayTotal)}</p>
                 </div>
             )}
         </div>
@@ -179,8 +179,8 @@ function PaymentsEditor({ payments = [], onChange, isEditing }) {
                         </button>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                        <input type="number" placeholder="Amount (₹)" value={p.amount || ''}
-                            onChange={e => handleChange(i, 'amount', e.target.value)}
+                        <input type="text" inputMode="decimal" placeholder="Amount (₹)" value={p.amount ? toIndianCommas(p.amount) : ''}
+                            onChange={e => handleChange(i, 'amount', parseIndianNumber(e.target.value))}
                             className="w-full bg-white border border-stone-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-300" />
                         <input type="date" value={p.date || ''}
                             onChange={e => handleChange(i, 'date', e.target.value)}
@@ -195,7 +195,7 @@ function PaymentsEditor({ payments = [], onChange, isEditing }) {
             {payments.length > 0 && (
                 <div className="bg-amber-50 rounded-xl p-3 flex justify-between items-center border border-amber-100">
                     <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wide">Auto Total (will save)</p>
-                    <p className="text-sm font-bold text-amber-700">₹{displayTotal.toLocaleString('en-IN')}</p>
+                    <p className="text-sm font-bold text-amber-700">{formatINR(displayTotal)}</p>
                 </div>
             )}
         </div>
@@ -215,6 +215,10 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [activityLogs, setActivityLogs] = useState([]);
     const isAdmin = user?.userType === 'admin';
+    const isCompleted = customer.stage === 'Completed';
+    const [adminUnlocked, setAdminUnlocked] = useState(false);
+    // Frozen for ALL users when completed. Admin can temporarily unlock.
+    const isFrozen = isCompleted && !(isAdmin && adminUnlocked);
 
     const [localChecklist, setLocalChecklist] = useState(normalizeChecklist(customer.project_checklist));
     const [checklistDirty, setChecklistDirty] = useState(false);
@@ -318,9 +322,11 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
             <h3 className="text-[9px] font-bold text-stone-400 uppercase tracking-widest flex items-center gap-2">
                 <Icon size={12} /> {title}
             </h3>
-            <button onClick={() => setEditingSection(editingSection === id ? null : id)} className="text-stone-400 hover:text-amber-600 transition-colors">
-                {editingSection === id ? <X size={14} /> : <Edit3 size={12} />}
-            </button>
+            {!isFrozen && (
+                <button onClick={() => setEditingSection(editingSection === id ? null : id)} className="text-stone-400 hover:text-amber-600 transition-colors">
+                    {editingSection === id ? <X size={14} /> : <Edit3 size={12} />}
+                </button>
+            )}
         </div>
     );
 
@@ -334,6 +340,11 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                         <div className="flex items-center gap-3">
                             <h2 className="text-xl font-bold text-white">{customer.customer_name}</h2>
                             <span className="text-[9px] bg-white/10 text-stone-400 px-2 py-0.5 rounded font-bold uppercase tracking-widest">{customer.crn || 'NO-CRN'}</span>
+                            {isCompleted && (
+                                <span className={`flex items-center gap-1 text-[9px] px-2 py-0.5 rounded font-bold uppercase tracking-widest ${isFrozen ? 'bg-stone-700 text-stone-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                                    {isFrozen ? <><Lock size={9} /> Frozen</> : <><Unlock size={9} /> Unlocked</>}
+                                </span>
+                            )}
                         </div>
                         <div className="flex items-center gap-2 mt-2">
                             {customer.location_link && (
@@ -351,6 +362,13 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                         </div>
                     </div>
                     <div className="flex gap-2">
+                        {/* Admin unlock/lock toggle for completed cards */}
+                        {isCompleted && isAdmin && (
+                            <button onClick={() => { setAdminUnlocked(prev => !prev); setEditingSection(null); }}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold transition-all ${adminUnlocked ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-lg shadow-amber-500/30' : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white'}`}>
+                                {adminUnlocked ? <><Lock size={12} /> Re-lock</> : <><Unlock size={12} /> Unlock to Edit</>}
+                            </button>
+                        )}
                         {isAdmin && <button onClick={() => setShowDeleteConfirm(true)} className="p-2 text-white/30 hover:text-red-400"><Trash2 size={18} /></button>}
                         <button onClick={onClose} className="p-2 text-white/30 hover:text-white"><X size={24} /></button>
                     </div>
@@ -374,23 +392,50 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                 {/* Body */}
                 <div className="flex-1 overflow-y-auto p-6 bg-[#FCFBFA]">
 
+                    {/* Frozen banner for completed cards */}
+                    {isCompleted && isFrozen && (
+                        <div className="flex items-center gap-3 px-4 py-3 rounded-2xl mb-6 border bg-stone-100 border-stone-200">
+                            <Lock className="w-4 h-4 text-stone-500 flex-shrink-0" />
+                            <div className="flex-1">
+                                <p className="text-xs font-bold text-stone-600">This project is completed & frozen</p>
+                                <p className="text-[10px] text-stone-400">{isAdmin ? 'Click "Unlock to Edit" in the header to make changes' : 'Only an admin can unlock this record for editing'}</p>
+                            </div>
+                        </div>
+                    )}
+                    {isCompleted && !isFrozen && (
+                        <div className="flex items-center gap-3 px-4 py-3 rounded-2xl mb-6 border bg-amber-50 border-amber-200">
+                            <Unlock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                            <div className="flex-1">
+                                <p className="text-xs font-bold text-amber-700">Admin edit mode — Record unlocked</p>
+                                <p className="text-[10px] text-amber-500">Click "Re-lock" when done to freeze the record again</p>
+                            </div>
+                        </div>
+                    )}
+
                     {/* ── OVERVIEW ── */}
                     {activeTab === 'overview' && (
                         <div className="space-y-6 animate-in fade-in duration-300">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {/* Stage select */}
-                                <div className="bg-white p-4 rounded-2xl border border-stone-100 shadow-sm">
+                                <div className={`p-4 rounded-2xl border shadow-sm ${isCompleted ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-stone-100'}`}>
                                     <label className="text-[9px] text-stone-400 font-bold uppercase mb-2 block">Primary Stage</label>
-                                    <select value={editData.stage} onChange={async (e) => {
-                                        const newStage = e.target.value;
-                                        const oldStage = editData.stage;
-                                        setEditData(prev => ({ ...prev, stage: newStage }));
-                                        await onUpdate(customer.id, { stage: newStage });
-                                        await logActivity(user.id, 'stage_change', `STAGE: ${oldStage} → ${newStage}`, customer.id);
-                                        fetchLogs();
-                                    }} className="w-full p-2.5 bg-white border border-stone-200 rounded-xl font-bold text-stone-700 outline-none">
-                                        {PRIMARY_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-                                    </select>
+                                    {isFrozen ? (
+                                        <div className="w-full p-2.5 bg-stone-100 border border-stone-200 rounded-xl font-bold text-stone-500 flex items-center gap-2">
+                                            <Lock className="w-3.5 h-3.5" />
+                                            <span>{PRIMARY_STAGES.find(s => s.id === editData.stage)?.label || editData.stage}</span>
+                                        </div>
+                                    ) : (
+                                        <select value={editData.stage} onChange={async (e) => {
+                                            const newStage = e.target.value;
+                                            const oldStage = editData.stage;
+                                            setEditData(prev => ({ ...prev, stage: newStage }));
+                                            await onUpdate(customer.id, { stage: newStage });
+                                            await logActivity(user.id, 'stage_change', `STAGE: ${oldStage} → ${newStage}`, customer.id);
+                                            fetchLogs();
+                                        }} className="w-full p-2.5 bg-white border border-stone-200 rounded-xl font-bold text-stone-700 outline-none">
+                                            {PRIMARY_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                                        </select>
+                                    )}
                                 </div>
                                 {/* Financial tag */}
                                 <div className="bg-white p-4 rounded-2xl border border-stone-100 shadow-sm">
@@ -400,7 +445,7 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                                             const isActive = editData.financial_tag === tag.id;
                                             const colors = FINANCIAL_TAG_COLORS[tag.id] || {};
                                             return (
-                                                <button key={tag.id} onClick={() => handleToggleFinancialTag(tag.id)}
+                                                <button key={tag.id} onClick={() => !isFrozen && handleToggleFinancialTag(tag.id)} disabled={isFrozen}
                                                     className={`inline-flex items-center gap-1 text-[9px] px-2.5 py-1 rounded-full font-bold border transition-all ${isActive ? `${colors.bg} ${colors.text} ${colors.border}` : 'bg-stone-50 text-stone-400 border-transparent hover:border-stone-200'}`}>
                                                     {isActive && <span className={`w-1 h-1 rounded-full ${colors.dot}`} />}
                                                     {tag.label}
@@ -517,7 +562,7 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                                         <div className="flex flex-col gap-3">
                                             {localChecklist.filter(i => i.section === sec).map(item => (
                                                 <label key={item.id} className="flex items-start gap-3 cursor-pointer group p-1.5 hover:bg-stone-50 rounded-lg transition-colors">
-                                                    <input type="checkbox" checked={item.checked} onChange={() => {
+                                                    <input type="checkbox" checked={item.checked} disabled={isFrozen} onChange={() => {
                                                         const updated = localChecklist.map(i => i.id === item.id ? { ...i, checked: !i.checked, checkedAt: new Date().toISOString(), checkedBy: user.name } : i);
                                                         setLocalChecklist(updated); setChecklistDirty(true);
                                                     }} className="mt-0.5 rounded border-stone-300 text-amber-500 focus:ring-amber-500" />
