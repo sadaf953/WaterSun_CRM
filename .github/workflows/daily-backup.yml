@@ -12,6 +12,7 @@ jobs:
     steps:
       - name: Clone private backup repo
         run: |
+          echo "Starting backup at $(date -u)..."
           git clone https://x-access-token:${{ secrets.BACKUP_PAT }}@github.com/${{ secrets.BACKUP_REPO }}.git backup-repo
 
       # Year/month folder — new folder each month, same files overwritten daily
@@ -59,3 +60,4 @@ jobs:
                   ${{ env.FOLDER }}/metadata.csv
           git commit -m "Daily snapshot $(date +'%d %b %Y, %H:%M UTC')" || echo "No changes since last backup"
           git push
+          echo "Backup complete ✅"
