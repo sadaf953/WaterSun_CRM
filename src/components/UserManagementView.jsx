@@ -24,7 +24,14 @@ function CreateUserModal({ onClose, onCreated, currentUser }) {
         setError('');
         try {
             const response = await supabase.functions.invoke('smooth-worker', { body: form });
-            if (response.error) throw new Error(response.error.message || JSON.stringify(response.error));
+            if (response.error) {
+            let message = response.error.message;
+            try {
+                const body = await response.error.context.json();
+                if (body?.error) message = body.error;
+            } catch (_) {}
+            throw new Error(message);
+            }
             if (response.data?.error) throw new Error(response.data.error);
             logActivity(currentUser.id, 'create', `Created new user: ${form.name}`, `${form.role} (${form.user_type})`);
             onCreated();
