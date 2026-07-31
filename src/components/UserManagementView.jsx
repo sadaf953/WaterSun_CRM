@@ -10,37 +10,58 @@ import { USER_TYPE_OPTIONS, ROLE_OPTIONS } from '../constants';
 import { ShieldCheck, Plus, RefreshCw, AlertTriangle, Eye, EyeOff, UserCog, X } from 'lucide-react';
 
 // ─── CreateUserModal ──────────────────────────────────────────────────────────
-function CreateUserModal({ onClose, onCreated, currentUser }) {
-    const [form, setForm] = useState({ name: '', email: '', password: '', role: 'Sales Executive', user_type: 'sales' });
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState('');
-    const [showPw, setShowPw] = useState(false);
-    const set = (field, val) => setForm(prev => ({ ...prev, [field]: val }));
+const handleCreate = async () => {
+    if (!form.name.trim() || !form.email.trim() || !form.password.trim()) {
+        setError('Name, email, and password are required.');
+        return;
+    }
 
-    const handleCreate = async () => {
-        if (!form.name.trim() || !form.email.trim() || !form.password.trim()) { setError('Name, email, and password are required.'); return; }
-        if (form.password.length < 8) { setError('Password must be at least 8 characters.'); return; }
-        setSaving(true);
-        setError('');
-        try {
-            const response = await supabase.functions.invoke('smooth-worker', { body: form });
-            if (response.error) {
+    if (form.password.length < 8) {
+        setError('Password must be at least 8 characters.');
+        return;
+    }
+
+    setSaving(true);
+    setError('');
+
+    try {
+        const response = await supabase.functions.invoke('smooth-worker', {
+            body: form,
+        });
+
+        if (response.error) {
             let message = response.error.message;
+
             try {
-                const body = await response.error.context.json();
-                if (body?.error) message = body.error;
-            } catch (_) {}
-            throw new Error(message);
+                const body = await response.error.context?.json();
+                if (body?.error) {
+                    message = body.error;
+                }
+            } catch (_) {
+                // Ignore if the error body can't be parsed
             }
-            if (response.data?.error) throw new Error(response.data.error);
-            logActivity(currentUser.id, 'create', `Created new user: ${form.name}`, `${form.role} (${form.user_type})`);
-            onCreated();
-        } catch (err) {
-            setError(err.message || 'Failed to create user.');
-        } finally {
-            setSaving(false);
+
+            throw new Error(message);
         }
-    };
+
+        if (response.data?.error) {
+            throw new Error(response.data.error);
+        }
+
+        logActivity(
+            currentUser.id,
+            'create',
+            `Created new user: ${form.name}`,
+            `${form.role} (${form.user_type})`
+        );
+
+        onCreated();
+    } catch (err) {
+        setError(err.message || 'Failed to create user.');
+    } finally {
+        setSaving(false);
+    }
+};
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
@@ -104,7 +125,9 @@ function CreateUserModal({ onClose, onCreated, currentUser }) {
             </div>
         </div>
     );
-}
+
+
+
 
 // ─── UserManagementView ───────────────────────────────────────────────────────
 export default function UserManagementView({ currentUser }) {
