@@ -10,7 +10,14 @@ import { USER_TYPE_OPTIONS, ROLE_OPTIONS } from '../constants';
 import { ShieldCheck, Plus, RefreshCw, AlertTriangle, Eye, EyeOff, UserCog, X } from 'lucide-react';
 
 // ─── CreateUserModal ──────────────────────────────────────────────────────────
-const handleCreate = async () => {
+function CreateUserModal({ onClose, onCreated, currentUser }) {
+    const [form, setForm] = useState({ name: '', email: '', password: '', role: 'Sales Executive', user_type: 'sales' });
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState('');
+    const [showPw, setShowPw] = useState(false);
+    const set = (field, val) => setForm(prev => ({ ...prev, [field]: val }));
+
+    const handleCreate = async () => {
     if (!form.name.trim() || !form.email.trim() || !form.password.trim()) {
         setError('Name, email, and password are required.');
         return;
@@ -62,7 +69,6 @@ const handleCreate = async () => {
         setSaving(false);
     }
 };
-
     return (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
             <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md overflow-hidden flex flex-col">
@@ -125,9 +131,7 @@ const handleCreate = async () => {
             </div>
         </div>
     );
-
-
-
+}
 
 // ─── UserManagementView ───────────────────────────────────────────────────────
 export default function UserManagementView({ currentUser }) {
