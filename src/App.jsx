@@ -20,11 +20,14 @@ import { useState, useEffect } from 'react';
 import { supabase } from './supabase';
 import { Sun } from 'lucide-react';
 import LoginScreen from './components/LoginScreen';
-import Dashboard   from './components/Dashboard';
+import Dashboard from './components/Dashboard';
+import SetPasswordPage from './components/SetPassword';
 
 export default function App() {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
+
 
     useEffect(() => {
         // Restore session on page load
@@ -51,6 +54,7 @@ export default function App() {
         // Only respond to sign-out; sign-in is handled by LoginScreen via onLogin
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event) => {
             if (event === 'SIGNED_OUT') setUser(null);
+            if (event === 'PASSWORD_RECOVERY') setIsPasswordRecovery(true); // NEW
         });
 
         return () => subscription.unsubscribe();
@@ -62,10 +66,14 @@ export default function App() {
         </div>
     );
 
+    if (isPasswordRecovery) {
+        return <SetPasswordPage />;
+    }
+
     return !user
         ? <LoginScreen onLogin={setUser} />
         : <Dashboard
             user={user}
             onLogout={async () => { await supabase.auth.signOut(); setUser(null); }}
-          />;
+        />;
 }

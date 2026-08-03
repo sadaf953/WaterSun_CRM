@@ -8,41 +8,41 @@ import {
 import { formatINR, toIndianCommas, parseIndianNumber } from '../utils';
 
 const STAGES = [
-    { id: 'leads',                  label: 'Leads',                icon: Users },
-    { id: 'sales_closed',           label: 'Sales Closed',         icon: ShoppingCart },
-    { id: 'pending_loans',          label: 'Pending Loans',        icon: Clock },
-    { id: 'material_procurement',   label: 'Material',             icon: Package },
-    { id: 'pending_installation',   label: 'Installation',         icon: Wrench },
-    { id: 'post_installation_docs', label: 'Docs',                 icon: FileText },
-    { id: 'pending_discom',         label: 'DISCOM',               icon: Send },
-    { id: 'meter_installation',     label: 'Meter',                icon: Gauge },
-    { id: 'discom_inspection',      label: 'Inspection',           icon: ClipboardCheck },
-    { id: 'subsidy_pending',        label: 'Subsidy',              icon: Banknote },
-    { id: 'second_payment',         label: '2nd Payment',          icon: CreditCard },
-    { id: 'third_payment',          label: '3rd Payment',          icon: CreditCard },
-    { id: 'completed',              label: 'Completed',            icon: CheckCircle2 },
+    { id: 'leads', label: 'Leads', icon: Users },
+    { id: 'sales_closed', label: 'Sales Closed', icon: ShoppingCart },
+    { id: 'pending_loans', label: 'Pending Loans', icon: Clock },
+    { id: 'material_procurement', label: 'Material', icon: Package },
+    { id: 'pending_installation', label: 'Installation', icon: Wrench },
+    { id: 'post_installation_docs', label: 'Docs', icon: FileText },
+    { id: 'pending_discom', label: 'DISCOM', icon: Send },
+    { id: 'meter_installation', label: 'Meter', icon: Gauge },
+    { id: 'discom_inspection', label: 'Inspection', icon: ClipboardCheck },
+    { id: 'subsidy_pending', label: 'Subsidy', icon: Banknote },
+    { id: 'second_payment', label: '2nd Payment', icon: CreditCard },
+    { id: 'third_payment', label: '3rd Payment', icon: CreditCard },
+    { id: 'completed', label: 'Completed', icon: CheckCircle2 },
 ];
 
 const INTENT_COLORS = {
-    High:   'bg-red-100 text-red-700 border-red-200',
+    High: 'bg-red-100 text-red-700 border-red-200',
     Medium: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-    Low:    'bg-gray-100 text-gray-500 border-gray-200',
+    Low: 'bg-gray-100 text-gray-500 border-gray-200',
 };
 
 const STAGE_COLORS = {
-    leads:                  'bg-blue-50 text-blue-700',
-    sales_closed:           'bg-purple-50 text-purple-700',
-    pending_loans:          'bg-orange-50 text-orange-700',
-    material_procurement:   'bg-yellow-50 text-yellow-700',
-    pending_installation:   'bg-pink-50 text-pink-700',
+    leads: 'bg-blue-50 text-blue-700',
+    sales_closed: 'bg-purple-50 text-purple-700',
+    pending_loans: 'bg-orange-50 text-orange-700',
+    material_procurement: 'bg-yellow-50 text-yellow-700',
+    pending_installation: 'bg-pink-50 text-pink-700',
     post_installation_docs: 'bg-indigo-50 text-indigo-700',
-    pending_discom:         'bg-cyan-50 text-cyan-700',
-    meter_installation:     'bg-teal-50 text-teal-700',
-    discom_inspection:      'bg-lime-50 text-lime-700',
-    subsidy_pending:        'bg-amber-50 text-amber-700',
-    second_payment:         'bg-emerald-50 text-emerald-700',
-    third_payment:          'bg-green-50 text-green-700',
-    completed:              'bg-gray-900 text-white',
+    pending_discom: 'bg-cyan-50 text-cyan-700',
+    meter_installation: 'bg-teal-50 text-teal-700',
+    discom_inspection: 'bg-lime-50 text-lime-700',
+    subsidy_pending: 'bg-amber-50 text-amber-700',
+    second_payment: 'bg-emerald-50 text-emerald-700',
+    third_payment: 'bg-green-50 text-green-700',
+    completed: 'bg-gray-900 text-white',
 };
 
 // ─── Field Row ────────────────────────────────────────────────────────────────
@@ -178,12 +178,12 @@ function CustomerSheet({ customer, onClose, onUpdate, userName }) {
                                 <EditInput label="Email" value={editData.email} onChange={v => set('email', v)} type="email" />
                                 <EditInput label="Location" value={editData.location} onChange={v => set('location', v)} />
                                 <EditInput label="Branch" value={editData.branch} onChange={v => set('branch', v)}
-                                    options={['Srikalahasti','Tirupati','Tada','Puttur','Nagari','Pichatur']} />
+                                    options={['Srikalahasti', 'Tirupati', 'Tada', 'Puttur', 'Nagari', 'Pichatur']} />
                                 <EditInput label="Capacity (kWp)" value={editData.capacity_kwp} onChange={v => set('capacity_kwp', v)} type="number" />
                                 <EditInput label="System Type" value={editData.project_type} onChange={v => set('project_type', v)}
-                                    options={['On-Grid','Off-Grid','Hybrid']} />
+                                    options={['On-Grid', 'Off-Grid', 'Hybrid']} />
                                 <EditInput label="Intent" value={editData.intent_level} onChange={v => set('intent_level', v)}
-                                    options={['Low','Medium','High']} />
+                                    options={['Low', 'Medium', 'High']} />
                                 <EditInput label="Site Remarks" value={editData.site_remarks} onChange={v => set('site_remarks', v)} textarea />
                                 <EditInput label="Specific Requirements" value={editData.specific_requirements} onChange={v => set('specific_requirements', v)} textarea />
                             </div>
@@ -219,7 +219,7 @@ function CustomerSheet({ customer, onClose, onUpdate, userName }) {
                             <div>
                                 <EditInput label="Quoted Amount (₹)" value={editData.total_cost} onChange={v => set('total_cost', v)} type="number" />
                                 <EditInput label="Bank Quote (₹)" value={editData.quoted_price_bank} onChange={v => set('quoted_price_bank', v)} type="number" />
-                                <EditInput label="Payment Mode" value={editData.payment_mode} onChange={v => set('payment_mode', v)} options={['Cash','Loan']} />
+                                <EditInput label="Payment Mode" value={editData.payment_mode} onChange={v => set('payment_mode', v)} options={['Cash', 'Loan']} />
                                 <EditInput label="Bank Branch" value={editData.bank_branch} onChange={v => set('bank_branch', v)} />
                                 <EditInput label="Account Number" value={editData.account_number} onChange={v => set('account_number', v)} />
                                 <EditInput label="IFSC Code" value={editData.ifsc_code} onChange={v => set('ifsc_code', v)} />

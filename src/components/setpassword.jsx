@@ -1,4 +1,4 @@
-// ─── SetPasswordPage.jsx ───────────────────────────────────────────────────────
+// ─── SetPasswordP.jsx ───────────────────────────────────────────────────────
 // Landing page for the password-reset email link.
 // Route this at /set-password (must match the redirectTo in smooth-worker.ts
 // AND be added to Supabase Auth → URL Configuration → Redirect URLs).
@@ -8,7 +8,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import { ShieldCheck, Eye, EyeOff, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
-export default function SetPasswordPage() {
+export default function SetPassword() {
     const [status, setStatus] = useState('checking'); // checking | ready | invalid | saving | done
     const [password, setPassword] = useState('');
     const [confirm, setConfirm] = useState('');
