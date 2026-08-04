@@ -406,18 +406,18 @@ export default function Dashboard({ user, onLogout }) {
                         </div>
 
                         {user.userType === 'admin' && (
-                            <>
-                                <button onClick={() => exportAllToCSV(active)}
-                                    className="flex items-center gap-1.5 border border-stone-200 text-stone-600 px-3 py-2 rounded-xl text-sm font-medium hover:bg-stone-50 transition-colors">
-                                    <Download className="w-4 h-4" />
-                                    <span className="hidden sm:inline text-xs">Export</span>
-                                </button>
-                                <button onClick={() => setShowAddLead(true)}
-                                    className="flex items-center gap-1.5 bg-stone-900 text-white px-3 py-2 rounded-xl text-sm font-medium hover:bg-stone-800 transition-colors">
-                                    <Plus className="w-4 h-4" />
-                                    <span className="hidden sm:inline text-xs">Add Lead</span>
-                                </button>
-                            </>
+                            <button onClick={() => exportAllToCSV(active)}
+                                className="flex items-center gap-1.5 border border-stone-200 text-stone-600 px-3 py-2 rounded-xl text-sm font-medium hover:bg-stone-50 transition-colors">
+                                <Download className="w-4 h-4" />
+                                <span className="hidden sm:inline text-xs">Export</span>
+                            </button>
+                        )}
+                        {(user.userType === 'admin' || user.userType === 'sales') && (
+                            <button onClick={() => setShowAddLead(true)}
+                                className="flex items-center gap-1.5 bg-stone-900 text-white px-3 py-2 rounded-xl text-sm font-medium hover:bg-stone-800 transition-colors">
+                                <Plus className="w-4 h-4" />
+                                <span className="hidden sm:inline text-xs">Add Lead</span>
+                            </button>
                         )}
                     </div>
                 </header>
