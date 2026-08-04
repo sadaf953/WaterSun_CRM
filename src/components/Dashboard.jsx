@@ -34,6 +34,10 @@ export default function Dashboard({ user, onLogout }) {
     const [currentView, setCurrentView] = useState('dashboard');
     const [selectedStage, setSelectedStage] = useState('Leads');
     const [stageSearch, setStageSearch] = useState('');    // per-stage search
+    const [pocFilterInput, setPocFilterInput] = useState('');  // typed poc name (not yet applied)
+    const [pocFilter, setPocFilter] = useState('');    // applied poc filter
+    const [showPocDrop, setShowPocDrop] = useState(false);
+    const pocFilterRef = useRef(null);
     const [globalSearch, setGlobalSearch] = useState('');    // global search
     const [globalResults, setGlobalResults] = useState([]);
     const [showGlobalDrop, setShowGlobalDrop] = useState(false);
@@ -61,25 +65,31 @@ export default function Dashboard({ user, onLogout }) {
         return () => supabase.removeChannel(channel);
     }, []);
 
-    // Close global search dropdown when clicking outside
+    // Close global search / poc dropdowns when clicking outside
     useEffect(() => {
         const handler = (e) => {
             if (globalSearchRef.current && !globalSearchRef.current.contains(e.target)) {
                 setShowGlobalDrop(false);
+            }
+            if (pocFilterRef.current && !pocFilterRef.current.contains(e.target)) {
+                setShowPocDrop(false);
             }
         };
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
     }, []);
 
-    // ── Global search: across ALL non-deleted stages ───────────────────────────
+    // ── Global search: across ALL non-deleted stages (respects poc filter) ─────
     useEffect(() => {
         const q = globalSearch.trim().toLowerCase();
         if (!q) { setGlobalResults([]); setShowGlobalDrop(false); return; }
-        const active = customers.filter(c => !c.deleted_at);
+        const activeNow = customers.filter(c => !c.deleted_at);
+        const pocMatched = pocFilter
+            ? activeNow.filter(c => c.poc?.toLowerCase() === pocFilter.toLowerCase())
+            : activeNow;
         const authorized = user.userType === 'admin'
-            ? active
-            : active.filter(c => c.poc === user.name);
+            ? pocMatched
+            : pocMatched.filter(c => c.poc === user.name);
         const results = authorized.filter(c =>
             c.customer_name?.toLowerCase().includes(q) ||
             c.phone?.includes(globalSearch.trim()) ||
@@ -87,7 +97,7 @@ export default function Dashboard({ user, onLogout }) {
         ).slice(0, 8);
         setGlobalResults(results);
         setShowGlobalDrop(results.length > 0);
-    }, [globalSearch, customers]);
+    }, [globalSearch, customers, pocFilter]);
 
     const handleGlobalSelect = (customer) => {
         // Navigate to the customer's stage so context is clear
@@ -157,21 +167,33 @@ export default function Dashboard({ user, onLogout }) {
     // up for every role right now. Revisit this once poc-matching is sorted.
     const isAuthorized = (c) => true;
 
+    // Distinct POC names across all active leads, for the typeahead dropdown
+    const uniquePocs = [...new Set(active.map(c => c.poc).filter(Boolean))].sort();
+    const pocSuggestions = pocFilterInput.trim()
+        ? uniquePocs.filter(p => p.toLowerCase().includes(pocFilterInput.trim().toLowerCase()))
+        : uniquePocs;
+
+    const matchesPocFilter = (c) => !pocFilter || c.poc?.toLowerCase() === pocFilter.toLowerCase();
+
+    // Everything downstream — stage counts, the stages grid, dashboard stats,
+    // financial tags — is built from this one poc-scoped list
+    const pocScoped = active.filter(c => matchesPocFilter(c) && isAuthorized(c));
+
     const stageCounts = PRIMARY_STAGES.reduce((acc, s) => {
-        acc[s.id] = active.filter(c => c.stage === s.id && isAuthorized(c)).length;
+        acc[s.id] = pocScoped.filter(c => c.stage === s.id).length;
         return acc;
     }, {});
-    const financialTagCount = active.filter(c => c.financial_tag && isAuthorized(c)).length;
+    const financialTagCount = pocScoped.filter(c => c.financial_tag).length;
     const trashCount = trashed.length;
 
-    // Per-stage filtered cards (admin grid) / all-assigned leads (SalesView)
-    const filtered = active.filter(c => {
+    // Per-stage filtered cards — now respects the poc filter too
+    const filtered = pocScoped.filter(c => {
         const q = stageSearch.toLowerCase();
         const matchesSearch = !stageSearch ||
             c.customer_name?.toLowerCase().includes(q) ||
             c.phone?.includes(stageSearch) ||
             c.crn?.toLowerCase().includes(q);
-        return c.stage === selectedStage && matchesSearch && isAuthorized(c);
+        return c.stage === selectedStage && matchesSearch;
     });
 
     // ── Nav button helper ─────────────────────────────────────────────────────
@@ -291,6 +313,9 @@ export default function Dashboard({ user, onLogout }) {
                         {currentView === 'financial' && financialTagCount > 0 && (
                             <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">{financialTagCount} tagged</span>
                         )}
+                        {pocFilter && (
+                            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">POC: {pocFilter}</span>
+                        )}
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -334,6 +359,52 @@ export default function Dashboard({ user, onLogout }) {
                             </div>
                         )}
 
+                        {/* POC filter — applies everywhere: dashboard stats, financial, and every stage */}
+                        <div className="relative hidden lg:flex items-center gap-1.5" ref={pocFilterRef}>
+                            <input
+                                type="text"
+                                placeholder="POC name..."
+                                value={pocFilterInput}
+                                onChange={e => { setPocFilterInput(e.target.value); setShowPocDrop(true); }}
+                                onFocus={() => setShowPocDrop(true)}
+                                onKeyDown={e => e.key === 'Enter' && (setPocFilter(pocFilterInput.trim()), setShowPocDrop(false))}
+                                className="px-3 py-2 bg-stone-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 w-32"
+                            />
+                            <button
+                                onClick={() => {
+                                    setPocFilter(pocFilterInput.trim());
+                                    setShowPocDrop(false);
+                                }}
+                                className="px-3 py-2 rounded-xl text-xs font-medium bg-stone-900 text-white hover:bg-stone-800 transition-colors">
+                                Apply
+                            </button>
+                            {(pocFilter || pocFilterInput) && (
+                                <button
+                                    onClick={() => {
+                                        setPocFilter('');
+                                        setPocFilterInput('');
+                                        setShowPocDrop(false);
+                                    }}
+                                    className="px-3 py-2 rounded-xl text-xs font-medium bg-stone-200 text-stone-700 hover:bg-stone-300 transition-colors">
+                                    Clear
+                                </button>
+                            )}
+
+                            {/* Typeahead suggestions */}
+                            {showPocDrop && pocSuggestions.length > 0 && (
+                                <div className="absolute top-full mt-1 left-0 w-32 bg-white rounded-xl shadow-xl border border-stone-100 py-1 z-50 overflow-hidden max-h-48 overflow-y-auto">
+                                    {pocSuggestions.map(name => (
+                                        <button
+                                            key={name}
+                                            onClick={() => { setPocFilterInput(name); setShowPocDrop(false); }}
+                                            className="w-full px-3 py-1.5 text-left text-xs text-stone-700 hover:bg-amber-50 hover:text-amber-700 transition-colors truncate">
+                                            {name}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
                         {user.userType === 'admin' && (
                             <>
                                 <button onClick={() => exportAllToCSV(active)}
@@ -353,8 +424,8 @@ export default function Dashboard({ user, onLogout }) {
 
                 {/* View router */}
                 <div className="flex-1 p-4 lg:p-6">
-                    {currentView === 'dashboard' && <DashboardView customers={active} loading={loading} />}
-                    {currentView === 'financial' && <FinancialView customers={active} onSelectCustomer={setSelectedCustomer} />}
+                    {currentView === 'dashboard' && <DashboardView customers={pocScoped} loading={loading} />}
+                    {currentView === 'financial' && <FinancialView customers={pocScoped} onSelectCustomer={setSelectedCustomer} />}
                     {currentView === 'activity' && user.userType === 'admin' && <ActivityLogView />}
                     {currentView === 'users' && user.userType === 'admin' && <UserManagementView currentUser={user} />}
 
@@ -383,8 +454,8 @@ export default function Dashboard({ user, onLogout }) {
                         ) : (
                             <div className="flex flex-col items-center justify-center h-64 text-stone-400">
                                 <Users className="w-12 h-12 mb-3 text-stone-200" />
-                                <p className="font-medium text-stone-500">{stageSearch ? 'No matching results in this stage' : 'No customers in this stage'}</p>
-                                <p className="text-sm mt-1">{stageSearch ? 'Try the global search bar to find across all stages' : 'Move customers here or add a new lead'}</p>
+                                <p className="font-medium text-stone-500">{(stageSearch || pocFilter) ? 'No matching results in this stage' : 'No customers in this stage'}</p>
+                                <p className="text-sm mt-1">{pocFilter ? `No leads with POC "${pocFilter}" here` : stageSearch ? 'Try the global search bar to find across all stages' : 'Move customers here or add a new lead'}</p>
                             </div>
                         )
                     )}

@@ -292,9 +292,83 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                 changeSummary.push(`${key.replace(/_/g, ' ').toUpperCase()}: ${customer[key] || 'None'} → ${updates[key] || 'None'}`);
             }
         });
+
+        // Compare subsidy_history
+        const oldSubsidy = customer.subsidy_history || [];
+        const newSubsidy = updates.subsidy_history || [];
+        if (JSON.stringify(oldSubsidy) !== JSON.stringify(newSubsidy)) {
+            const subChanges = [];
+            if (newSubsidy.length === 0 && oldSubsidy.length > 0) {
+                subChanges.push("Cleared all subsidy entries");
+            } else {
+                const maxLen = Math.max(oldSubsidy.length, newSubsidy.length);
+                for (let i = 0; i < maxLen; i++) {
+                    const oldItem = oldSubsidy[i];
+                    const newItem = newSubsidy[i];
+                    if (!oldItem && newItem) {
+                        subChanges.push(`Added Entry ${i + 1} (${newItem.status}${newItem.date ? ` on ${newItem.date}` : ''}${newItem.remark ? `: ${newItem.remark}` : ''})`);
+                    } else if (oldItem && !newItem) {
+                        subChanges.push(`Removed Entry ${i + 1} (${oldItem.status})`);
+                    } else if (JSON.stringify(oldItem) !== JSON.stringify(newItem)) {
+                        const diffs = [];
+                        if (oldItem.status !== newItem.status) {
+                            diffs.push(`status: "${oldItem.status}" → "${newItem.status}"`);
+                        }
+                        if (oldItem.date !== newItem.date) {
+                            diffs.push(`date: "${oldItem.date || 'None'}" → "${newItem.date || 'None'}"`);
+                        }
+                        if (oldItem.remark !== newItem.remark) {
+                            diffs.push(`remark: "${oldItem.remark || 'None'}" → "${newItem.remark || 'None'}"`);
+                        }
+                        if (diffs.length > 0) {
+                            subChanges.push(`Updated Entry ${i + 1} (${diffs.join(', ')})`);
+                        }
+                    }
+                }
+            }
+            if (subChanges.length > 0) {
+                changeSummary.push(`SUBSIDY STATUS: ${subChanges.join(' | ')}`);
+            }
+        }
+
+        // Compare payments
+        const oldPayments = customer.payments || [];
+        const newPayments = updates.payments || [];
+        if (JSON.stringify(oldPayments) !== JSON.stringify(newPayments)) {
+            const payChanges = [];
+            if (newPayments.length === 0 && oldPayments.length > 0) {
+                payChanges.push("Cleared all payments");
+            } else {
+                const maxLen = Math.max(oldPayments.length, newPayments.length);
+                for (let i = 0; i < maxLen; i++) {
+                    const oldItem = oldPayments[i];
+                    const newItem = newPayments[i];
+                    if (!oldItem && newItem) {
+                        payChanges.push(`Added Payment ${i + 1} (${newItem.amount ? `₹${newItem.amount}` : 'No amount'}${newItem.date ? ` on ${newItem.date}` : ''})`);
+                    } else if (oldItem && !newItem) {
+                        payChanges.push(`Removed Payment ${i + 1} (₹${oldItem.amount || 0})`);
+                    } else if (JSON.stringify(oldItem) !== JSON.stringify(newItem)) {
+                        const diffs = [];
+                        if (oldItem.amount !== newItem.amount) {
+                            diffs.push(`amount: "₹${oldItem.amount || 0}" → "₹${newItem.amount || 0}"`);
+                        }
+                        if (oldItem.date !== newItem.date) {
+                            diffs.push(`date: "${oldItem.date || 'None'}" → "${newItem.date || 'None'}"`);
+                        }
+                        if (diffs.length > 0) {
+                            payChanges.push(`Updated Payment ${i + 1} (${diffs.join(', ')})`);
+                        }
+                    }
+                }
+            }
+            if (payChanges.length > 0) {
+                changeSummary.push(`PAYMENTS: ${payChanges.join(' | ')}`);
+            }
+        }
+
         delete updates.id; delete updates.created_at; delete updates.crn;
         await onUpdate(customer.id, updates);
-        if (changeSummary.length > 0) await logActivity(user.id, 'update', changeSummary.join(' | '), customer.id);
+        if (changeSummary.length > 0) await logActivity(user.id, 'update', `${customer.customer_name}: ${changeSummary.join(' | ')}`, customer.id);
         setEditingSection(null);
         setSaving(false);
         fetchLogs();
@@ -430,7 +504,7 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                                             const oldStage = editData.stage;
                                             setEditData(prev => ({ ...prev, stage: newStage }));
                                             await onUpdate(customer.id, { stage: newStage });
-                                            await logActivity(user.id, 'stage_change', `STAGE: ${oldStage} → ${newStage}`, customer.id);
+                                            await logActivity(user.id, 'stage_change', `${customer.customer_name}: STAGE: ${oldStage} → ${newStage}`, customer.id);
                                             fetchLogs();
                                         }} className="w-full p-2.5 bg-white border border-stone-200 rounded-xl font-bold text-stone-700 outline-none">
                                             {PRIMARY_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
@@ -551,7 +625,29 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                                     <p className="text-[9px] text-stone-400 font-bold uppercase mt-1">{localChecklist.filter(i => i.checked).length} / {localChecklist.length} Items Cleared</p>
                                 </div>
                                 {checklistDirty && (
-                                    <button onClick={async () => { await onUpdate(customer.id, { project_checklist: localChecklist }); setChecklistDirty(false); fetchLogs(); }}
+                                    <button onClick={async () => {
+                                        const oldChecklist = normalizeChecklist(customer.project_checklist);
+                                        const newChecklist = localChecklist;
+                                        const checklistChanges = [];
+                                        newChecklist.forEach(item => {
+                                            const oldItem = oldChecklist.find(i => i.id === item.id);
+                                            const oldState = oldItem ? oldItem.checked : false;
+                                            if (oldState !== item.checked) {
+                                                checklistChanges.push(`${item.checked ? 'Checked' : 'Unchecked'} "${item.label}"`);
+                                            }
+                                        });
+                                        await onUpdate(customer.id, { project_checklist: localChecklist });
+                                        if (checklistChanges.length > 0) {
+                                            await logActivity(
+                                                user.id,
+                                                'update',
+                                                `${customer.customer_name}: Checklist update - ${checklistChanges.join(' | ')}`,
+                                                customer.id
+                                            );
+                                        }
+                                        setChecklistDirty(false);
+                                        fetchLogs();
+                                    }}
                                         className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-[10px] font-bold">Save Checklist</button>
                                 )}
                             </div>
