@@ -4,6 +4,8 @@
 //   • Trash sidebar item + soft-delete/recover/hard-delete
 //   • Global search across ALL stages (name, phone, CRN) with results overlay
 //   • Stage counts exclude deleted records
+//   • Sales/Operations roles share the same shell, but see SalesView's card UI
+//     for the "stages" view and lose Activity Log / User Management / Trash
 // ──────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef } from 'react';
@@ -20,7 +22,6 @@ import ActivityLogView from './ActivityLogView';
 import UserManagementView from './UserManagementView';
 import TrashView from './TrashView';
 import AgentForm from './agentform';
-import SalesView from './salesview';
 
 import {
     LayoutDashboard, IndianRupee, Activity, UserCog, Menu, X,
@@ -152,7 +153,9 @@ export default function Dashboard({ user, onLogout }) {
     // ── Derived data (active = non-deleted only) ───────────────────────────────
     const active = customers.filter(c => !c.deleted_at);
     const trashed = customers.filter(c => !!c.deleted_at);
-    const isAuthorized = (c) => user.userType === 'admin' || c.poc === user.name;
+    // TEMP: poc-based filtering disabled per Hawk's request — every lead shows
+    // up for every role right now. Revisit this once poc-matching is sorted.
+    const isAuthorized = (c) => true;
 
     const stageCounts = PRIMARY_STAGES.reduce((acc, s) => {
         acc[s.id] = active.filter(c => c.stage === s.id && isAuthorized(c)).length;
@@ -161,7 +164,7 @@ export default function Dashboard({ user, onLogout }) {
     const financialTagCount = active.filter(c => c.financial_tag && isAuthorized(c)).length;
     const trashCount = trashed.length;
 
-    // Per-stage filtered cards
+    // Per-stage filtered cards (admin grid) / all-assigned leads (SalesView)
     const filtered = active.filter(c => {
         const q = stageSearch.toLowerCase();
         const matchesSearch = !stageSearch ||
@@ -195,9 +198,9 @@ export default function Dashboard({ user, onLogout }) {
         );
     };
 
-    // ── Role-based routing ────────────────────────────────────────────────────
+    // ── Role-based routing (agent only — sales/operations now share this shell) ─
     if (user.userType === 'agent') return <AgentForm user={user} onLogout={onLogout} />;
-    if (user.userType === 'sales') return <SalesView customers={active} loading={loading} user={user} onUpdate={handleUpdateCustomer} />;
+
     const headerTitle =
         currentView === 'dashboard' ? 'Business Dashboard'
             : currentView === 'financial' ? 'Financial Tags'
@@ -243,19 +246,21 @@ export default function Dashboard({ user, onLogout }) {
                         </button>
                     </div>
 
-                    {/* Project Stages */}
+                    {/* Project Stages — identical for every role */}
                     <div className="text-[9px] uppercase font-bold text-stone-300 px-3 pt-4 pb-2 tracking-widest">Project Stages</div>
                     {PRIMARY_STAGES.map(s => (
                         <NavBtn key={s.id} view="stages" stage={s.id} icon={s.icon} label={s.label} count={stageCounts[s.id] || 0} />
                     ))}
 
-                    {/* System */}
-                    <div className="text-[9px] uppercase font-bold text-stone-300 px-3 pt-5 pb-2 tracking-widest">System</div>
-                    <NavBtn view="activity" icon={Activity} label="Activity Log" count={0} />
+                    {/* System — admin only */}
                     {user.userType === 'admin' && (
-                        <NavBtn view="users" icon={UserCog} label="User Management" count={0} />
+                        <>
+                            <div className="text-[9px] uppercase font-bold text-stone-300 px-3 pt-5 pb-2 tracking-widest">System</div>
+                            <NavBtn view="activity" icon={Activity} label="Activity Log" count={0} />
+                            <NavBtn view="users" icon={UserCog} label="User Management" count={0} />
+                            <NavBtn view="trash" icon={Trash2} label="Trash" count={trashCount} redBadge />
+                        </>
                     )}
-                    <NavBtn view="trash" icon={Trash2} label="Trash" count={trashCount} redBadge />
                 </div>
 
                 {/* User + Logout */}
@@ -350,11 +355,11 @@ export default function Dashboard({ user, onLogout }) {
                 <div className="flex-1 p-4 lg:p-6">
                     {currentView === 'dashboard' && <DashboardView customers={active} loading={loading} />}
                     {currentView === 'financial' && <FinancialView customers={active} onSelectCustomer={setSelectedCustomer} />}
-                    {currentView === 'activity' && <ActivityLogView />}
+                    {currentView === 'activity' && user.userType === 'admin' && <ActivityLogView />}
                     {currentView === 'users' && user.userType === 'admin' && <UserManagementView currentUser={user} />}
 
-                    {/* Trash view */}
-                    {currentView === 'trash' && (
+                    {/* Trash view — admin only */}
+                    {currentView === 'trash' && user.userType === 'admin' && (
                         <TrashView
                             trashedCustomers={trashed}
                             onRecover={handleRecover}
@@ -363,7 +368,7 @@ export default function Dashboard({ user, onLogout }) {
                         />
                     )}
 
-                    {/* Stage grid */}
+                    {/* Stage grid — identical for every role */}
                     {currentView === 'stages' && (
                         loading ? (
                             <div className="flex items-center justify-center h-64">
