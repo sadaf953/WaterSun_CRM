@@ -11,16 +11,16 @@ import { supabase } from '../supabase';
 import { logActivity, useMetadata, exportAllToCSV } from '../utils';
 import { PRIMARY_STAGES } from '../constants';
 
-import DashboardView       from './DashboardView';
-import FinancialView       from './FinancialView';
-import CustomerCard        from './CustomerCard';
+import DashboardView from './DashboardView';
+import FinancialView from './FinancialView';
+import CustomerCard from './CustomerCard';
 import CustomerDetailModal from './CustomerDetailModal';
-import AddLeadModal        from './AddLeadModal';
-import ActivityLogView     from './ActivityLogView';
-import UserManagementView  from './UserManagementView';
-import TrashView           from './TrashView';
-import AgentForm           from './agentform';
-import SalesView           from './salesview';
+import AddLeadModal from './AddLeadModal';
+import ActivityLogView from './ActivityLogView';
+import UserManagementView from './UserManagementView';
+import TrashView from './TrashView';
+import AgentForm from './agentform';
+import SalesView from './salesview';
 
 import {
     LayoutDashboard, IndianRupee, Activity, UserCog, Menu, X,
@@ -28,18 +28,18 @@ import {
 } from 'lucide-react';
 
 export default function Dashboard({ user, onLogout }) {
-    const [customers, setCustomers]         = useState([]);
-    const [loading, setLoading]             = useState(true);
-    const [currentView, setCurrentView]     = useState('dashboard');
+    const [customers, setCustomers] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [currentView, setCurrentView] = useState('dashboard');
     const [selectedStage, setSelectedStage] = useState('Leads');
-    const [stageSearch, setStageSearch]     = useState('');    // per-stage search
-    const [globalSearch, setGlobalSearch]   = useState('');    // global search
+    const [stageSearch, setStageSearch] = useState('');    // per-stage search
+    const [globalSearch, setGlobalSearch] = useState('');    // global search
     const [globalResults, setGlobalResults] = useState([]);
     const [showGlobalDrop, setShowGlobalDrop] = useState(false);
-    const [sidebarOpen, setSidebarOpen]     = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
-    const [showAddLead, setShowAddLead]     = useState(false);
-    const globalSearchRef                   = useRef(null);
+    const [showAddLead, setShowAddLead] = useState(false);
+    const globalSearchRef = useRef(null);
     const meta = useMetadata();
 
     // ── Data fetching ──────────────────────────────────────────────────────────
@@ -150,8 +150,8 @@ export default function Dashboard({ user, onLogout }) {
     };
 
     // ── Derived data (active = non-deleted only) ───────────────────────────────
-    const active      = customers.filter(c => !c.deleted_at);
-    const trashed     = customers.filter(c => !!c.deleted_at);
+    const active = customers.filter(c => !c.deleted_at);
+    const trashed = customers.filter(c => !!c.deleted_at);
     const isAuthorized = (c) => user.userType === 'admin' || c.poc === user.name;
 
     const stageCounts = PRIMARY_STAGES.reduce((acc, s) => {
@@ -159,7 +159,7 @@ export default function Dashboard({ user, onLogout }) {
         return acc;
     }, {});
     const financialTagCount = active.filter(c => c.financial_tag && isAuthorized(c)).length;
-    const trashCount        = trashed.length;
+    const trashCount = trashed.length;
 
     // Per-stage filtered cards
     const filtered = active.filter(c => {
@@ -197,15 +197,14 @@ export default function Dashboard({ user, onLogout }) {
 
     // ── Role-based routing ────────────────────────────────────────────────────
     if (user.userType === 'agent') return <AgentForm user={user} onLogout={onLogout} />;
-    if (user.userType === 'sales') return <SalesView customers={active} loading={loading} user={user} onUpdate={handleMoveStage} />;
-
+    if (user.userType === 'sales') return <SalesView customers={active} loading={loading} user={user} onUpdate={handleUpdateCustomer} />;
     const headerTitle =
         currentView === 'dashboard' ? 'Business Dashboard'
-        : currentView === 'financial' ? 'Financial Tags'
-        : currentView === 'activity'  ? 'Activity Log'
-        : currentView === 'users'     ? 'User Management'
-        : currentView === 'trash'     ? 'Trash'
-        : PRIMARY_STAGES.find(s => s.id === selectedStage)?.label || selectedStage;
+            : currentView === 'financial' ? 'Financial Tags'
+                : currentView === 'activity' ? 'Activity Log'
+                    : currentView === 'users' ? 'User Management'
+                        : currentView === 'trash' ? 'Trash'
+                            : PRIMARY_STAGES.find(s => s.id === selectedStage)?.label || selectedStage;
 
     return (
         <div className="min-h-screen bg-[#FCFBFA] flex">
@@ -252,7 +251,7 @@ export default function Dashboard({ user, onLogout }) {
 
                     {/* System */}
                     <div className="text-[9px] uppercase font-bold text-stone-300 px-3 pt-5 pb-2 tracking-widest">System</div>
-                    <NavBtn view="activity" icon={Activity}  label="Activity Log"      count={0} />
+                    <NavBtn view="activity" icon={Activity} label="Activity Log" count={0} />
                     {user.userType === 'admin' && (
                         <NavBtn view="users" icon={UserCog} label="User Management" count={0} />
                     )}
@@ -351,7 +350,7 @@ export default function Dashboard({ user, onLogout }) {
                 <div className="flex-1 p-4 lg:p-6">
                     {currentView === 'dashboard' && <DashboardView customers={active} loading={loading} />}
                     {currentView === 'financial' && <FinancialView customers={active} onSelectCustomer={setSelectedCustomer} />}
-                    {currentView === 'activity'  && <ActivityLogView />}
+                    {currentView === 'activity' && <ActivityLogView />}
                     {currentView === 'users' && user.userType === 'admin' && <UserManagementView currentUser={user} />}
 
                     {/* Trash view */}
