@@ -1,9 +1,9 @@
 {
-  "name": "solar_crm_demo",
+  "name": "watersun_crm",
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "homepage": "https://sadaf953.github.io/solar_crm_demo/",
+  "homepage": "https://sadaf953.github.io/watersun_crm",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
