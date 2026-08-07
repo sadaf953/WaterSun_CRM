@@ -6,7 +6,7 @@
 
 import { useState } from 'react';
 import { Trash2, RotateCcw, Eye, AlertTriangle, X } from 'lucide-react';
-import { PRIMARY_STAGES, FINANCIAL_TAG_COLORS, FINANCIAL_TAGS } from '../constants';
+import { PRIMARY_STAGES } from '../constants';
 import { formatINR } from '../utils';
 
 function formatDate(d) {
@@ -15,8 +15,6 @@ function formatDate(d) {
 }
 
 function TrashDetailDrawer({ customer, onClose }) {
-    const tagColors = customer.financial_tag ? (FINANCIAL_TAG_COLORS[customer.financial_tag] || {}) : {};
-    const tagInfo = FINANCIAL_TAGS.find(f => f.id === customer.financial_tag);
     return (
         <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-[28px] shadow-2xl w-full max-w-lg overflow-hidden border border-stone-100">
@@ -32,31 +30,22 @@ function TrashDetailDrawer({ customer, onClose }) {
                 </div>
                 <div className="p-6 space-y-3">
                     {[
-                        ['CRN',              customer.crn],
-                        ['Phone',            customer.phone],
-                        ['Email',            customer.email],
+                        // ['CRN',              customer.crn],
+                        ['Phone',            customer.phone_number],
+                        ['Email',            customer.email_address],
                         ['Location',         customer.location],
                         ['Branch',           customer.company_branch],
-                        ['POC',              customer.poc],
-                        ['Capacity',         customer.capacity_kwp ? `${customer.capacity_kwp} kWp` : null],
+                        ['POC',              customer.dealer],
+                        ['Capacity',         customer.system_capacity_kwp ? `${customer.system_capacity_kwp} kWp` : null],
                         ['Project Type',     customer.project_type],
                         ['Stage at Deletion',PRIMARY_STAGES.find(s => s.id === customer.stage)?.label || customer.stage],
-                        ['Quoted Amount',    customer.quoted_amount ? formatINR(customer.quoted_amount) : null],
-                        ['Total Received',   customer.total_received ? formatINR(customer.total_received) : null],
                     ].map(([label, val]) => val ? (
                         <div key={label} className="flex justify-between text-sm">
                             <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wide">{label}</span>
                             <span className="text-stone-700 font-medium">{val}</span>
                         </div>
                     ) : null)}
-                    {tagInfo && (
-                        <div className="pt-2 border-t border-stone-100">
-                            <span className={`inline-flex items-center gap-1 text-[9px] px-2 py-0.5 rounded-full font-bold uppercase border ${tagColors.bg || 'bg-stone-50'} ${tagColors.text || 'text-stone-500'} ${tagColors.border || 'border-stone-200'}`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${tagColors.dot || 'bg-stone-400'}`} />
-                                {tagInfo.label}
-                            </span>
-                        </div>
-                    )}
+
                 </div>
             </div>
         </div>
@@ -88,7 +77,7 @@ export default function TrashView({ trashedCustomers, onRecover, onHardDelete, i
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                             <p className="font-bold text-stone-600">{c.customer_name}</p>
-                            <span className="text-[9px] bg-stone-100 text-stone-400 px-2 py-0.5 rounded font-bold uppercase">{c.crn || 'NO-CRN'}</span>
+                            {/* <span className="text-[9px] bg-stone-100 text-stone-400 px-2 py-0.5 rounded font-bold uppercase">{c.crn || 'NO-CRN'}</span> */}
                             <span className="text-[9px] bg-red-50 text-red-400 px-2 py-0.5 rounded font-bold uppercase">Deleted</span>
                         </div>
                         <p className="text-xs text-stone-400">

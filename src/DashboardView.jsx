@@ -6,14 +6,7 @@ export default function DashboardView({ customers = [], loading }) {
     if (loading) return <div className="p-20 text-center animate-pulse text-gray-400 font-bold uppercase tracking-widest">Analyzing Data...</div>;
 
     const totalCapacity = customers.reduce((sum, c) => sum + (Number(c.capacity) || 0), 0);
-    const totalRevenue = customers.reduce((sum, c) => sum + (Number(c.quoted_amount) || 0), 0);
     const completedProjects = customers.filter(c => c.stage === 'completed').length;
-    
-    // Revenue logic
-    const totalCollected = customers.reduce((sum, c) => {
-        return sum + (Number(c.payment_1 || 0) + Number(c.payment_2 || 0) + Number(c.payment_3 || 0));
-    }, 0);
-    const receivables = totalRevenue - totalCollected;
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">

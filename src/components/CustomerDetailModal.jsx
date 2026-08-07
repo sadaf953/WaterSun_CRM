@@ -13,9 +13,9 @@ import { useState, useEffect } from 'react';
 import {
     X, Edit3, Trash2, Save, Send, AlertTriangle, CheckSquare,
     User, Zap, IndianRupee, Building2, FolderOpen, MapPin,
-    LayoutDashboard, History, Plus, ShieldCheck, Banknote, Lock, Unlock,
+    LayoutDashboard, History, Plus, ShieldCheck, Lock, Unlock, ClipboardList, Banknote,
 } from 'lucide-react';
-import { PRIMARY_STAGES, FINANCIAL_TAGS, FINANCIAL_TAG_COLORS } from '../constants';
+import { PRIMARY_STAGES } from '../constants';
 import { normalizeChecklist } from '../models';
 import { logActivity, formatLogDate, formatINR, toIndianCommas, formatInputValue, parseIndianNumber } from '../utils';
 import { supabase } from '../supabase';
@@ -23,6 +23,40 @@ import HistoryEntryEditor from './HistoryEntryEditor';
 
 // ─── formatMoney: uses centralized Indian comma system from utils ─────────────
 const fmt = formatINR;
+
+// ─── formatDateTime: helper to format date as "04 Aug, 11:01 PM" ──────────────
+const formatDateTime = (date) => {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const d = date.getDate().toString().padStart(2, '0');
+    const m = months[date.getMonth()];
+    let hours = date.getHours();
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const h = hours.toString().padStart(2, '0');
+    return `${d} ${m}, ${h}:${minutes} ${ampm}`;
+};
+
+// ─── getStageRemarkFromData: robust helper to extract remark ─────────────────
+const getStageRemarkFromData = (stagesRemarksObj, stageName) => {
+    if (!stagesRemarksObj) return '';
+    if (typeof stagesRemarksObj === 'object') {
+        return stagesRemarksObj[stageName] || '';
+    }
+    if (typeof stagesRemarksObj === 'string') {
+        try {
+            const parsed = JSON.parse(stagesRemarksObj);
+            if (typeof parsed === 'object' && parsed) {
+                return parsed[stageName] || '';
+            }
+            return parsed || '';
+        } catch (e) {
+            return stagesRemarksObj;
+        }
+    }
+    return '';
+};
 
 // ─── MetaSelect: dropdown that lets the user type+add a new option ───────────
 // Adds the new value to the Supabase metadata table automatically.
@@ -126,6 +160,84 @@ function EditableDetailItem({ label, field, value, onChange, type = 'text', isMo
     );
 }
 
+// ─── CheckboxRemarkItem ───────────────────────────────────────────────────────
+function CheckboxRemarkItem({ label, field, remarkField, value, remarkValue, onChange, isEditing }) {
+    const [showInput, setShowInput] = useState(!!remarkValue?.trim());
+
+    useEffect(() => {
+        if (remarkValue?.trim()) {
+            setShowInput(true);
+        }
+    }, [remarkValue]);
+
+    if (!isEditing) {
+        return (
+            <div className="py-1.5 flex items-start gap-3 group">
+                <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-all ${value ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-stone-100 border-stone-300 text-transparent'}`}>
+                    {value && <svg className="w-2.5 h-2.5 stroke-[3] stroke-current" fill="none" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
+                </div>
+                <div className="flex-1 min-w-0">
+                    <span className={`text-xs block ${value ? 'text-stone-400 line-through' : 'text-stone-700 font-semibold'}`}>{label}</span>
+                    {remarkValue?.trim() && (
+                        <p className="text-[10px] text-stone-400 mt-0.5 font-medium italic">
+                            Remark: {remarkValue}
+                        </p>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="py-1.5 flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                    <input
+                        type="checkbox"
+                        id={field}
+                        checked={!!value}
+                        onChange={e => onChange(field, e.target.checked)}
+                        className="w-4 h-4 text-amber-500 border-stone-300 rounded focus:ring-amber-500 cursor-pointer"
+                    />
+                    <label htmlFor={field} className="text-xs font-semibold text-stone-700 cursor-pointer select-none">
+                        {label}
+                    </label>
+                </div>
+                {/* {!showInput && (
+                    <button
+                        type="button"
+                        onClick={() => setShowInput(true)}
+                        className="text-[10px] text-stone-400 hover:text-amber-600 font-bold uppercase transition-colors"
+                    >
+                        + Add Remark
+                    </button>
+                )} */}
+            </div>
+            {showInput && (
+                <div className="relative flex items-center gap-1.5 animate-in slide-in-from-top-1 duration-200 pl-6.5">
+                    <input
+                        type="text"
+                        placeholder="Add a remark/note..."
+                        value={remarkValue || ''}
+                        onChange={e => onChange(remarkField, e.target.value)}
+                        className="w-full bg-stone-50 border border-stone-200 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-amber-300 text-stone-700 pr-8"
+                    />
+                    {!(remarkValue?.trim()) && (
+                        <button
+                            type="button"
+                            onClick={() => setShowInput(false)}
+                            className="absolute right-2 text-stone-300 hover:text-stone-500 text-xs font-bold font-mono"
+                            title="Remove remark field"
+                        >
+                            ✕
+                        </button>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ─── PaymentsEditor ───────────────────────────────────────────────────────────
 // onChange(newPayments, totalReceived) — passes total up so parent can save it
 function PaymentsEditor({ payments = [], onChange, isEditing }) {
@@ -203,19 +315,34 @@ function PaymentsEditor({ payments = [], onChange, isEditing }) {
 }
 
 // ─── Subsidy status options ───────────────────────────────────────────────────
-const SUBSIDY_STATUS_OPTIONS = ['Pending', 'Submitted', 'Rejected', 'Redeemed', 'Disbursed'];
+const SUBSIDY_STATUS_OPTIONS = ['Pending', 'Submitted', 'Rejected', 'Return', 'Redeemed', 'Disbursed'];
 
 // ─── CustomerDetailModal ──────────────────────────────────────────────────────
 export default function CustomerDetailModal({ customer, onClose, onUpdate, onDelete, user, meta }) {
-    const [activeTab, setActiveTab] = useState('overview');
+    const [activeTab, setActiveTab] = useState(() => {
+        const regStages = ['REGISTRATION', 'LOAN', 'MATERIAL PROCUREMENT', 'HOLD PROCUREMENT'];
+        const checklistStages = [
+            'MATERIAL DELIVERY', 'INSTALLATION STATUS', 'GEO TAG PHOTO',
+            'DISCOM SUBMISSION', 'METER INSTALLATION', 'SYSTEM COMMISSIONING',
+            'METER PROCESS', 'DISCOM INSPECTION', 'COMPLETED'
+        ];
+        if (regStages.includes(customer?.stage)) {
+            return 'registration';
+        }
+        if (checklistStages.includes(customer?.stage)) {
+            return 'checklist';
+        }
+        return 'overview';
+    });
     const [editingSection, setEditingSection] = useState(null);
+    const [isSaved, setIsSaved] = useState(false);
     const [editData, setEditData] = useState({ ...customer });
     const [followUpText, setFollowUpText] = useState('');
     const [saving, setSaving] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [activityLogs, setActivityLogs] = useState([]);
     const isAdmin = user?.userType === 'admin';
-    const isCompleted = customer.stage === 'Completed';
+    const isCompleted = customer.stage === 'COMPLETED';
     const [adminUnlocked, setAdminUnlocked] = useState(false);
     // Frozen for ALL users when completed. Admin can temporarily unlock.
     const isFrozen = isCompleted && !(isAdmin && adminUnlocked);
@@ -237,50 +364,77 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
         if (data) setActivityLogs(data);
     };
 
+    const REG_CHECKLIST_FIELDS = [
+        { key: 'adhaar_card', remarkKey: 'adhaar_card_remarks' },
+        { key: 'pan_card', remarkKey: 'pan_card_remarks' },
+        { key: 'index_2', remarkKey: 'index_2_remarks' },
+        { key: 'light_bill', remarkKey: 'light_bill_remarks' },
+        { key: 'bank_details', remarkKey: 'bank_details_remarks' },
+        { key: 'bank_passbook', remarkKey: 'bank_passbook_remarks' },
+    ];
+
+    const isRegChecklistDirty = REG_CHECKLIST_FIELDS.some(field => {
+        const checkDirty = !!editData[field.key] !== !!customer[field.key];
+        const remarkDirty = (editData[field.remarkKey] || '') !== (customer[field.remarkKey] || '');
+        return checkDirty || remarkDirty;
+    });
+
+    const handleSaveRegChecklist = async () => {
+        const patch = {};
+        const changes = [];
+        REG_CHECKLIST_FIELDS.forEach(field => {
+            const oldCheck = !!customer[field.key];
+            const newCheck = !!editData[field.key];
+            if (oldCheck !== newCheck) {
+                patch[field.key] = newCheck;
+                changes.push(`${field.key}: ${oldCheck ? 'Checked' : 'Unchecked'} → ${newCheck ? 'Checked' : 'Unchecked'}`);
+            }
+            const oldRemark = customer[field.remarkKey] || '';
+            const newRemark = editData[field.remarkKey] || '';
+            if (oldRemark !== newRemark) {
+                patch[field.remarkKey] = newRemark;
+                changes.push(`${field.remarkKey}: "${oldRemark}" → "${newRemark}"`);
+            }
+        });
+
+        await onUpdate(customer.id, patch);
+        if (changes.length > 0) {
+            await logActivity(user.id, 'update', `${customer.customer_name}: Registration checklist update - ${changes.join(' | ')}`, customer.id);
+        }
+        fetchLogs();
+    };
+
     useEffect(() => {
-        setEditData({ ...customer });
+        setEditData(prev => {
+            if (prev.id !== customer.id) {
+                return { ...customer };
+            }
+            return {
+                ...customer,
+                stages_remarks: prev.stages_remarks
+            };
+        });
         setLocalChecklist(normalizeChecklist(customer.project_checklist));
         fetchLogs();
-    }, [customer.id]);
+    }, [customer]);
 
-    // ── Auto-recalculate receivables whenever money fields change ──────────────
-    // receivables = quoted_amount − discount − total_received  (floor 0)
-    const recalcFinancials = (patch, current) => {
-        const merged = { ...current, ...patch };
-        const quoted   = Number(merged.quoted_amount)  || 0;
-        const discount = Number(merged.discount)        || 0;
-        const received = Number(merged.total_received)  || 0;
-        const receivables = Math.max(0, quoted - discount - received);
-        return { ...patch, receivables };
-    };
+    useEffect(() => {
+        const dbRemark = getStageRemarkFromData(customer.stages_remarks, editData.stage);
+        const currentRemark = getStageRemarkFromData(editData.stages_remarks, editData.stage);
+
+        if (dbRemark && currentRemark === dbRemark) {
+            setIsSaved(true);
+        } else {
+            setIsSaved(false);
+        }
+    }, [editData.stage, customer]);
+
+
+
+
 
     const handleChange = (field, val) => {
-        const FINANCE_FIELDS = ['quoted_amount', 'discount', 'total_received'];
-        if (FINANCE_FIELDS.includes(field)) {
-            setEditData(prev => {
-                const patch = recalcFinancials({ [field]: val }, prev);
-                return { ...prev, ...patch };
-            });
-        } else {
-            setEditData(prev => ({ ...prev, [field]: val }));
-        }
-    };
-
-    // Payments: auto-update total_received from sum AND recalc receivables
-    const handlePaymentsChange = (newPayments, total) => {
-        setEditData(prev => {
-            const patch = recalcFinancials({ payments: newPayments, total_received: total }, prev);
-            return { ...prev, ...patch };
-        });
-    };
-
-    const handleToggleFinancialTag = async (tagId) => {
-        const newTag = editData.financial_tag === tagId ? null : tagId;
-        setEditData(prev => ({ ...prev, financial_tag: newTag }));
-        await onUpdate(customer.id, { financial_tag: newTag });
-        const tagLabel = FINANCIAL_TAGS.find(t => t.id === tagId)?.label || tagId;
-        logActivity(user.id, 'update', `${customer.customer_name}: Financial tag - ${tagLabel}`, customer.id);
-        fetchLogs();
+        setEditData(prev => ({ ...prev, [field]: val }));
     };
 
     const handleSave = async () => {
@@ -331,41 +485,6 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
             }
         }
 
-        // Compare payments
-        const oldPayments = customer.payments || [];
-        const newPayments = updates.payments || [];
-        if (JSON.stringify(oldPayments) !== JSON.stringify(newPayments)) {
-            const payChanges = [];
-            if (newPayments.length === 0 && oldPayments.length > 0) {
-                payChanges.push("Cleared all payments");
-            } else {
-                const maxLen = Math.max(oldPayments.length, newPayments.length);
-                for (let i = 0; i < maxLen; i++) {
-                    const oldItem = oldPayments[i];
-                    const newItem = newPayments[i];
-                    if (!oldItem && newItem) {
-                        payChanges.push(`Added Payment ${i + 1} (${newItem.amount ? `₹${newItem.amount}` : 'No amount'}${newItem.date ? ` on ${newItem.date}` : ''})`);
-                    } else if (oldItem && !newItem) {
-                        payChanges.push(`Removed Payment ${i + 1} (₹${oldItem.amount || 0})`);
-                    } else if (JSON.stringify(oldItem) !== JSON.stringify(newItem)) {
-                        const diffs = [];
-                        if (oldItem.amount !== newItem.amount) {
-                            diffs.push(`amount: "₹${oldItem.amount || 0}" → "₹${newItem.amount || 0}"`);
-                        }
-                        if (oldItem.date !== newItem.date) {
-                            diffs.push(`date: "${oldItem.date || 'None'}" → "${newItem.date || 'None'}"`);
-                        }
-                        if (diffs.length > 0) {
-                            payChanges.push(`Updated Payment ${i + 1} (${diffs.join(', ')})`);
-                        }
-                    }
-                }
-            }
-            if (payChanges.length > 0) {
-                changeSummary.push(`PAYMENTS: ${payChanges.join(' | ')}`);
-            }
-        }
-
         delete updates.id; delete updates.created_at; delete updates.crn;
         await onUpdate(customer.id, updates);
         if (changeSummary.length > 0) await logActivity(user.id, 'update', `${customer.customer_name}: ${changeSummary.join(' | ')}`, customer.id);
@@ -392,12 +511,23 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
     };
 
     const SectionHeader = ({ title, id, icon: Icon }) => (
-        <div className="flex items-center justify-between mb-3 border-b border-stone-100 pb-1.5 mt-6">
+        <div className="flex items-center justify-between mb-3 border-b border-stone-100 pb-1.5 mt-4">
             <h3 className="text-[9px] font-bold text-stone-400 uppercase tracking-widest flex items-center gap-2">
                 <Icon size={12} /> {title}
             </h3>
             {!isFrozen && (
-                <button onClick={() => setEditingSection(editingSection === id ? null : id)} className="text-stone-400 hover:text-amber-600 transition-colors">
+                <button onClick={() => {
+                    const isOpening = editingSection !== id;
+                    setEditingSection(isOpening ? id : null);
+                    if (isOpening) {
+                        setTimeout(() => {
+                            const el = document.getElementById(`section-${id}`);
+                            if (el) {
+                                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
+                        }, 150);
+                    }
+                }} className="text-stone-400 hover:text-amber-600 transition-colors">
                     {editingSection === id ? <X size={14} /> : <Edit3 size={12} />}
                 </button>
             )}
@@ -413,7 +543,7 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                     <div>
                         <div className="flex items-center gap-3">
                             <h2 className="text-xl font-bold text-white">{customer.customer_name}</h2>
-                            <span className="text-[9px] bg-white/10 text-stone-400 px-2 py-0.5 rounded font-bold uppercase tracking-widest">{customer.crn || 'NO-CRN'}</span>
+                            {/* <span className="text-[9px] bg-white/10 text-stone-400 px-2 py-0.5 rounded font-bold uppercase tracking-widest">{customer.crn || 'NO-CRN'}</span> */}
                             {isCompleted && (
                                 <span className={`flex items-center gap-1 text-[9px] px-2 py-0.5 rounded font-bold uppercase tracking-widest ${isFrozen ? 'bg-stone-700 text-stone-400' : 'bg-amber-500/20 text-amber-400'}`}>
                                     {isFrozen ? <><Lock size={9} /> Frozen</> : <><Unlock size={9} /> Unlocked</>}
@@ -451,10 +581,10 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                 {/* Tabs */}
                 <div className="flex bg-stone-900 px-6 gap-6 border-t border-white/5 flex-shrink-0">
                     {[
-                        { id: 'overview',  label: 'Overview',        icon: LayoutDashboard },
-                        { id: 'finance',   label: 'Finance & Bank',  icon: IndianRupee },
-                        { id: 'checklist', label: 'Checklist',       icon: CheckSquare },
-                        { id: 'history',   label: 'Notes & History', icon: History },
+                        { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+                        { id: 'registration', label: 'Registration', icon: ClipboardList },
+                        { id: 'checklist', label: 'Installation & Progress', icon: CheckSquare },
+                        { id: 'history', label: 'Notes & History', icon: History },
                     ].map(tab => (
                         <button key={tab.id} onClick={() => { setActiveTab(tab.id); setEditingSection(null); }}
                             className={`flex items-center gap-2 py-3 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 ${activeTab === tab.id ? 'text-amber-400 border-amber-400' : 'text-stone-500 border-transparent hover:text-stone-300'}`}>
@@ -486,206 +616,351 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                         </div>
                     )}
 
-                    {/* ── OVERVIEW ── */}
-                    {activeTab === 'overview' && (
-                        <div className="space-y-6 animate-in fade-in duration-300">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {/* Stage select */}
-                                <div className={`p-4 rounded-2xl border shadow-sm ${isCompleted ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-stone-100'}`}>
-                                    <label className="text-[9px] text-stone-400 font-bold uppercase mb-2 block">Primary Stage</label>
+                    {activeTab !== 'history' && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                            {/* Stage select */}
+                            <div className={`p-4 rounded-2xl border shadow-sm ${isCompleted ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-stone-100'}`}>
+                                <label className="text-[9px] text-stone-400 font-bold uppercase mb-2 block">Primary Stage</label>
+                                {isFrozen ? (
+                                    <div className="w-full p-2.5 bg-stone-100 border border-stone-200 rounded-xl font-bold text-stone-500 flex items-center gap-2">
+                                        <Lock className="w-3.5 h-3.5" />
+                                        <span>{PRIMARY_STAGES.find(s => s.id === editData.stage)?.label || editData.stage}</span>
+                                    </div>
+                                ) : (
+                                    <select value={editData.stage} onChange={async (e) => {
+                                        const newStage = e.target.value;
+                                        const oldStage = editData.stage;
+
+                                        // Get old remark from stages_remarks mapping
+                                        const oldRemark = getStageRemarkFromData(editData.stages_remarks, oldStage);
+
+                                        // Append current remark to internal remarks if it exists
+                                        let updatedInternalRemarks = editData.internal_remarks || '';
+                                        if (oldRemark.trim()) {
+                                            const formattedTime = formatDateTime(new Date());
+                                            const appendText = `${oldStage} (${formattedTime}): ${oldRemark.trim()}`;
+                                            updatedInternalRemarks = updatedInternalRemarks
+                                                ? `${updatedInternalRemarks}\n${appendText}`
+                                                : appendText;
+                                        }
+
+                                        let prevObj = {};
+                                        if (typeof editData.stages_remarks === 'object' && editData.stages_remarks) {
+                                            prevObj = editData.stages_remarks;
+                                        } else if (typeof editData.stages_remarks === 'string') {
+                                            try {
+                                                const parsed = JSON.parse(editData.stages_remarks);
+                                                if (typeof parsed === 'object' && parsed) prevObj = parsed;
+                                            } catch (e) { }
+                                        }
+                                        const updatedRemarks = {
+                                            ...prevObj,
+                                            [oldStage]: ''
+                                        };
+
+                                        setEditData(prev => ({
+                                            ...prev,
+                                            stage: newStage,
+                                            stages_remarks: updatedRemarks,
+                                            internal_remarks: updatedInternalRemarks
+                                        }));
+
+                                        await onUpdate(customer.id, {
+                                            stage: newStage,
+                                            stages_remarks: updatedRemarks,
+                                            internal_remarks: updatedInternalRemarks
+                                        });
+
+                                        await logActivity(user.id, 'stage_change', `${customer.customer_name}: STAGE: ${oldStage} → ${newStage}`, customer.id);
+                                        fetchLogs();
+                                    }} className="w-full p-2.5 bg-white border border-stone-200 rounded-xl font-bold text-stone-700 outline-none">
+                                        {PRIMARY_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                                    </select>
+                                )}
+                            </div>
+                            {/* Stage Remark */}
+                            <div className="bg-white p-4 rounded-2xl border border-stone-100 shadow-sm flex flex-col justify-between">
+                                <div>
+                                    <label className="text-[9px] text-stone-400 font-bold uppercase mb-2 block">Stage Remark (Current Stage)</label>
                                     {isFrozen ? (
-                                        <div className="w-full p-2.5 bg-stone-100 border border-stone-200 rounded-xl font-bold text-stone-500 flex items-center gap-2">
-                                            <Lock className="w-3.5 h-3.5" />
-                                            <span>{PRIMARY_STAGES.find(s => s.id === editData.stage)?.label || editData.stage}</span>
+                                        <div className="text-xs text-stone-500 font-medium italic min-h-[36px] bg-stone-50 p-2 rounded-lg">
+                                            {(typeof editData.stages_remarks === 'object' && editData.stages_remarks ? editData.stages_remarks[editData.stage] : '') || 'No remarks for this stage.'}
                                         </div>
                                     ) : (
-                                        <select value={editData.stage} onChange={async (e) => {
-                                            const newStage = e.target.value;
-                                            const oldStage = editData.stage;
-                                            setEditData(prev => ({ ...prev, stage: newStage }));
-                                            await onUpdate(customer.id, { stage: newStage });
-                                            await logActivity(user.id, 'stage_change', `${customer.customer_name}: STAGE: ${oldStage} → ${newStage}`, customer.id);
-                                            fetchLogs();
-                                        }} className="w-full p-2.5 bg-white border border-stone-200 rounded-xl font-bold text-stone-700 outline-none">
-                                            {PRIMARY_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-                                        </select>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                placeholder="Add remark for current stage..."
+                                                value={getStageRemarkFromData(editData.stages_remarks, editData.stage)}
+                                                onChange={e => {
+                                                    const newVal = e.target.value;
+                                                    setIsSaved(false);
+                                                    setEditData(prev => {
+                                                        const prevObj = typeof prev.stages_remarks === 'object' && prev.stages_remarks ? prev.stages_remarks : {};
+                                                        return {
+                                                            ...prev,
+                                                            stages_remarks: {
+                                                                ...prevObj,
+                                                                [prev.stage]: newVal
+                                                            }
+                                                        };
+                                                    });
+                                                }}
+                                                onKeyDown={async (e) => {
+                                                    if (e.key === 'Enter') {
+                                                        const currentRemark = getStageRemarkFromData(editData.stages_remarks, editData.stage);
+                                                        const originalRemark = getStageRemarkFromData(customer.stages_remarks, editData.stage);
+                                                        if (currentRemark !== originalRemark) {
+                                                            let prevObj = {};
+                                                            if (typeof customer.stages_remarks === 'object' && customer.stages_remarks) {
+                                                                prevObj = customer.stages_remarks;
+                                                            } else if (typeof customer.stages_remarks === 'string') {
+                                                                try {
+                                                                    const parsed = JSON.parse(customer.stages_remarks);
+                                                                    if (typeof parsed === 'object' && parsed) prevObj = parsed;
+                                                                } catch (ex) { }
+                                                            }
+                                                            const updatedRemarks = {
+                                                                ...prevObj,
+                                                                [editData.stage]: currentRemark
+                                                            };
+                                                            await onUpdate(customer.id, { stages_remarks: updatedRemarks });
+                                                            setIsSaved(true);
+                                                            await logActivity(
+                                                                user.id,
+                                                                'update',
+                                                                `${customer.customer_name}: Stage remark update for ${editData.stage} - "${currentRemark}"`,
+                                                                customer.id
+                                                            );
+                                                            fetchLogs();
+                                                        }
+                                                    }
+                                                }}
+                                                className="flex-1 bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                            />
+                                            <button
+                                                onClick={async () => {
+                                                    const currentRemark = getStageRemarkFromData(editData.stages_remarks, editData.stage);
+                                                    const originalRemark = getStageRemarkFromData(customer.stages_remarks, editData.stage);
+                                                    if (currentRemark !== originalRemark) {
+                                                        let prevObj = {};
+                                                        if (typeof customer.stages_remarks === 'object' && customer.stages_remarks) {
+                                                            prevObj = customer.stages_remarks;
+                                                        } else if (typeof customer.stages_remarks === 'string') {
+                                                            try {
+                                                                const parsed = JSON.parse(customer.stages_remarks);
+                                                                if (typeof parsed === 'object' && parsed) prevObj = parsed;
+                                                            } catch (ex) { }
+                                                        }
+                                                        const updatedRemarks = {
+                                                            ...prevObj,
+                                                            [editData.stage]: currentRemark
+                                                        };
+                                                        await onUpdate(customer.id, { stages_remarks: updatedRemarks });
+                                                        setIsSaved(true);
+                                                        await logActivity(
+                                                            user.id,
+                                                            'update',
+                                                            `${customer.customer_name}: Stage remark update for ${editData.stage} - "${currentRemark}"`,
+                                                            customer.id
+                                                        );
+                                                        fetchLogs();
+                                                    }
+                                                }}
+                                                disabled={isSaved}
+                                                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${isSaved ? 'bg-emerald-600 text-white cursor-default' : 'bg-stone-900 text-white hover:bg-stone-800'}`}
+                                            >
+                                                {isSaved ? 'Saved' : 'Save'}
+                                            </button>
+                                        </div>
                                     )}
                                 </div>
-                                {/* Financial tag */}
-                                <div className="bg-white p-4 rounded-2xl border border-stone-100 shadow-sm">
-                                    <label className="text-[9px] text-stone-400 font-bold uppercase mb-2 block">Financial Tag</label>
-                                    <div className="flex flex-wrap gap-1.5">
-                                        {FINANCIAL_TAGS.map(tag => {
-                                            const isActive = editData.financial_tag === tag.id;
-                                            const colors = FINANCIAL_TAG_COLORS[tag.id] || {};
-                                            return (
-                                                <button key={tag.id} onClick={() => !isFrozen && handleToggleFinancialTag(tag.id)} disabled={isFrozen}
-                                                    className={`inline-flex items-center gap-1 text-[9px] px-2.5 py-1 rounded-full font-bold border transition-all ${isActive ? `${colors.bg} ${colors.text} ${colors.border}` : 'bg-stone-50 text-stone-400 border-transparent hover:border-stone-200'}`}>
-                                                    {isActive && <span className={`w-1 h-1 rounded-full ${colors.dot}`} />}
-                                                    {tag.label}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
                             </div>
-
-                            {/* Customer Info */}
-                            <section>
-                                <SectionHeader title="Customer Info" id="cus" icon={User} />
-                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                    <EditableDetailItem label="Phone"    field="phone"          value={editData.phone}          onChange={handleChange} isEditing={editingSection === 'cus'} />
-                                    <EditableDetailItem label="Email"    field="email"           value={editData.email}          onChange={handleChange} isEditing={editingSection === 'cus'} />
-                                    <EditableDetailItem label="Aadhar"   field="aadhar"          value={editData.aadhar}         onChange={handleChange} isEditing={editingSection === 'cus'} />
-                                    <EditableDetailItem label="POC"      field="poc"             value={editData.poc}            onChange={handleChange} options={meta['poc']}            category="poc"            isEditing={editingSection === 'cus'} />
-                                    <EditableDetailItem label="Branch"   field="company_branch"  value={editData.company_branch} onChange={handleChange} options={meta['company_branch']} category="company_branch" isEditing={editingSection === 'cus'} />
-                                    <EditableDetailItem label="Location" field="location"        value={editData.location}       onChange={handleChange} isEditing={editingSection === 'cus'} />
-                                </div>
-                            </section>
-
-                            {/* Project & Technical */}
-                            <section>
-                                <SectionHeader title="Project & Technical" id="pro" icon={Zap} />
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                    <EditableDetailItem label="Capacity (kWp)"  field="capacity_kwp"   value={editData.capacity_kwp}   onChange={handleChange} isEditing={editingSection === 'pro'} isEnergy />
-                                    <EditableDetailItem label="Type"            field="project_type"   value={editData.project_type}   onChange={handleChange} options={meta['project_type']}  category="project_type"  isEditing={editingSection === 'pro'} />
-                                    <EditableDetailItem label="Vendor"          field="vendor"         value={editData.vendor}         onChange={handleChange} options={meta['vendor']}         category="vendor"         isEditing={editingSection === 'pro'} />
-                                    <EditableDetailItem label="Meter Cat"       field="meter_category" value={editData.meter_category} onChange={handleChange} options={meta['meter_category']}category="meter_category" isEditing={editingSection === 'pro'} />
-                                    <EditableDetailItem label="EB Number"       field="eb_number"      value={editData.eb_number}      onChange={handleChange} isEditing={editingSection === 'pro'} />
-                                    <EditableDetailItem label="DTR Code"        field="dtr_code"       value={editData.dtr_code}       onChange={handleChange} isEditing={editingSection === 'pro'} />
-                                    <EditableDetailItem label="Sanctioned Load" field="sanctioned_load"value={editData.sanctioned_load}onChange={handleChange} isEditing={editingSection === 'pro'} />
-                                    <EditableDetailItem label="DISCOM Div"      field="discom_division"value={editData.discom_division}onChange={handleChange} options={meta['discom_division']} category="discom_division" isEditing={editingSection === 'pro'} />
-                                </div>
-                            </section>
-
-                            {/* Links */}
-                            <section>
-                                <SectionHeader title="Application Links" id="links" icon={FolderOpen} />
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                    <EditableDetailItem label="Google Docs Link" field="google_docs"   value={editData.google_docs}   onChange={handleChange} isEditing={editingSection === 'links'} />
-                                    <EditableDetailItem label="Location Link"    field="location_link" value={editData.location_link}  onChange={handleChange} isEditing={editingSection === 'links'} />
-                                </div>
-                            </section>
                         </div>
                     )}
 
-                    {/* ── FINANCE & BANK ── */}
-                    {activeTab === 'finance' && (
+                    {/* ── OVERVIEW ── */}
+                    {activeTab === 'overview' && (
                         <div className="space-y-6 animate-in fade-in duration-300">
-                            <section>
-                                <SectionHeader title="Financial Summary" id="fin" icon={IndianRupee} />
-                                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-                                    <EditableDetailItem label="Quoted Amt"  field="quoted_amount"  value={editData.quoted_amount}  onChange={handleChange} type="number" isEditing={editingSection === 'fin'} isMoney />
-                                    <EditableDetailItem label="Received"    field="total_received"  value={editData.total_received} onChange={handleChange} type="number" isEditing={editingSection === 'fin'} isMoney />
-                                    <EditableDetailItem label="Receivable"  field="receivables"     value={editData.receivables}    onChange={handleChange} type="number" isEditing={editingSection === 'fin'} isMoney />
-                                    <EditableDetailItem label="Discount"    field="discount"        value={editData.discount}       onChange={handleChange} type="number" isEditing={editingSection === 'fin'} isMoney />
-                                    <EditableDetailItem label="Pay Type"    field="payment_type"    value={editData.payment_type}   onChange={handleChange} options={meta['payment_type']} category="payment_type" isEditing={editingSection === 'fin'} />
-                                </div>
-                                <PaymentsEditor
-                                    payments={editData.payments || []}
-                                    onChange={handlePaymentsChange}
-                                    isEditing={editingSection === 'fin'}
-                                />
-                            </section>
 
-                            {/* Subsidy — uses generic HistoryEntryEditor */}
-                            <section>
-                                <SectionHeader title="Subsidy Status History" id="sub" icon={Banknote} />
-                                <HistoryEntryEditor
-                                    entries={editData.subsidy_history || []}
-                                    onChange={val => handleChange('subsidy_history', val)}
-                                    isEditing={editingSection === 'sub'}
-                                    statusOptions={SUBSIDY_STATUS_OPTIONS}
-                                    title="Subsidy Entry"
-                                    emptyText="No subsidy history recorded"
-                                />
-                            </section>
-
-                            {/* Bank Info */}
-                            <section>
-                                <SectionHeader title="Bank Information" id="bnk" icon={Building2} />
+                            {/* Customer Info */}
+                            <section id="section-cus">
+                                <SectionHeader title="Customer Info" id="cus" icon={User} />
                                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                    <EditableDetailItem label="Account Name"  field="customer_account_name"  value={editData.customer_account_name}  onChange={handleChange} isEditing={editingSection === 'bnk'} />
-                                    <EditableDetailItem label="Bank Name"     field="bank_name"              value={editData.bank_name}              onChange={handleChange} options={meta['bank_name']} category="bank_name" isEditing={editingSection === 'bnk'} />
-                                    <EditableDetailItem label="Branch"        field="bank_branch"            value={editData.bank_branch}            onChange={handleChange} isEditing={editingSection === 'bnk'} />
-                                    <EditableDetailItem label="Account #"     field="bank_account_number"    value={editData.bank_account_number}    onChange={handleChange} isEditing={editingSection === 'bnk'} />
-                                    <EditableDetailItem label="IFSC Code"     field="ifsc_code"              value={editData.ifsc_code}              onChange={handleChange} isEditing={editingSection === 'bnk'} />
-                                    <EditableDetailItem label="Loan App #"    field="loan_application_number"value={editData.loan_application_number}onChange={handleChange} isEditing={editingSection === 'bnk'} />
+                                    <EditableDetailItem label="Customer Name" field="customer_name" value={editData.customer_name} onChange={handleChange} isEditing={editingSection === 'cus'} />
+                                    <EditableDetailItem label="Phone Number" field="phone" value={editData.phone} onChange={handleChange} isEditing={editingSection === 'cus'} />
+                                    <EditableDetailItem label="Email Address" field="email" value={editData.email} onChange={handleChange} isEditing={editingSection === 'cus'} />
+                                    <EditableDetailItem label="Villages" field="villages" value={editData.villages} onChange={handleChange} isEditing={editingSection === 'cus'} />
+                                    <EditableDetailItem label="Folder No" field="folder_no" value={editData.folder_no} onChange={handleChange} isEditing={editingSection === 'cus'} />
+                                    <EditableDetailItem label="Dealer Name" field="dealer" value={editData.dealer} onChange={handleChange} isEditing={editingSection === 'cus'} />
+                                    <EditableDetailItem label="Sub Dealer Name" field="sub_dealer_name" value={editData.sub_dealer_name} onChange={handleChange} isEditing={editingSection === 'cus'} />
+                                    <EditableDetailItem label="System Capacity (kWp)" field="system_capacity_kwp" value={editData.system_capacity_kwp} onChange={handleChange} isEditing={editingSection === 'cus'} />
+                                    <EditableDetailItem label="MODULE BRAND" field="module_brand" value={editData.module_brand} onChange={handleChange} options={meta['module_brand']} category="module_brand" isEditing={editingSection === 'cus'} />
+                                    <EditableDetailItem label="PAYMENT TYPE" field="payment_type" value={editData.payment_type} onChange={handleChange} options={meta['payment_type']} category="payment_type" isEditing={editingSection === 'cus'} />
+                                    <EditableDetailItem label="Sub Division" field="sub_divisions" value={editData.sub_divisions} onChange={handleChange} isEditing={editingSection === 'cus'} />
+                                    <EditableDetailItem label="Consumer No" field="consumer_no" value={editData.consumer_no} onChange={handleChange} isEditing={editingSection === 'cus'} />
+
+
                                 </div>
                             </section>
+
+                        </div>
+                    )}
+
+                    {/* ── REGISTRATION ── */}
+                    {activeTab === 'registration' && (
+                        <div className="space-y-4 animate-in fade-in duration-300">
+                            {/* Registration & Bank Details */}
+                            <section id="section-reg_details">
+                                <SectionHeader title="Registration & Bank Details" id="reg_details" icon={Building2} />
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                    <EditableDetailItem label="Registration date" field="registration_date" value={editData.registration_date} onChange={handleChange} type="date" isEditing={editingSection === 'reg_details'} />
+                                    <EditableDetailItem label="Bank Name" field="bank_name" value={editData.bank_name} onChange={handleChange} isEditing={editingSection === 'reg_details'} />
+                                    <EditableDetailItem label="Bank Branch & IFSC" field="bank_branch_ifsc" value={editData.bank_branch_ifsc} onChange={handleChange} isEditing={editingSection === 'reg_details'} />
+                                </div>
+                            </section>
+
+                            {/* Registration Checklist */}
+                            <section id="section-reg_checklist">
+                                <div className="flex items-center justify-between mb-3 border-b border-stone-100 pb-1.5 mt-4">
+                                    <h3 className="text-[9px] font-bold text-stone-400 uppercase tracking-widest flex items-center gap-2">
+                                        <ClipboardList size={12} /> Registration Checklist
+                                    </h3>
+                                    {!isFrozen && isRegChecklistDirty && (
+                                        <button onClick={handleSaveRegChecklist}
+                                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-[9px] font-bold transition-all shadow-md shadow-emerald-600/10">
+                                            Save Checklist
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="bg-white p-4 rounded-2xl border border-stone-100 shadow-sm">
+                                    <div className="flex flex-col gap-2">
+                                        {editData.payment_type?.trim().toLowerCase() !== 'cash' && (
+                                            <>
+                                                <CheckboxRemarkItem label="Adhaar card" field="adhaar_card" remarkField="adhaar_card_remarks" value={editData.adhaar_card} remarkValue={editData.adhaar_card_remarks} onChange={handleChange} isEditing={!isFrozen} />
+                                                <CheckboxRemarkItem label="Pan card" field="pan_card" remarkField="pan_card_remarks" value={editData.pan_card} remarkValue={editData.pan_card_remarks} onChange={handleChange} isEditing={!isFrozen} />
+                                                <CheckboxRemarkItem label="Index 2" field="index_2" remarkField="index_2_remarks" value={editData.index_2} remarkValue={editData.index_2_remarks} onChange={handleChange} isEditing={!isFrozen} />
+                                            </>
+                                        )}
+                                        <CheckboxRemarkItem label="Light Bill" field="light_bill" remarkField="light_bill_remarks" value={editData.light_bill} remarkValue={editData.light_bill_remarks} onChange={handleChange} isEditing={!isFrozen} />
+                                        <CheckboxRemarkItem label="Bank details" field="bank_details" remarkField="bank_details_remarks" value={editData.bank_details} remarkValue={editData.bank_details_remarks} onChange={handleChange} isEditing={!isFrozen} />
+                                        {editData.payment_type?.trim().toLowerCase() !== 'cash' && (
+                                            <CheckboxRemarkItem label="Bank Passbook" field="bank_passbook" remarkField="bank_passbook_remarks" value={editData.bank_passbook} remarkValue={editData.bank_passbook_remarks} onChange={handleChange} isEditing={!isFrozen} />
+                                        )}
+                                    </div>
+                                </div>
+                            </section>
+
+                            {/* Loan */}
+                            {editData.payment_type?.trim().toLowerCase() !== 'cash' && (
+                                <section id="section-sub">
+                                    <SectionHeader title="Loan & Subsidy Status" id="sub" icon={Banknote} />
+                                    <HistoryEntryEditor
+                                        entries={editData.subsidy_history || []}
+                                        onChange={val => handleChange('subsidy_history', val)}
+                                        isEditing={editingSection === 'sub'}
+                                        statusOptions={SUBSIDY_STATUS_OPTIONS}
+                                        title="Subsidy Entry"
+                                        emptyText="No subsidy history recorded"
+                                    />
+                                </section>
+                            )}
                         </div>
                     )}
 
                     {/* ── CHECKLIST ── */}
-                    {activeTab === 'checklist' && (
-                        <div className="space-y-4 animate-in fade-in duration-300">
-                            <div className="flex items-center justify-between bg-white p-5 rounded-2xl border border-stone-100 shadow-sm mb-4">
-                                <div>
-                                    <h3 className="text-sm font-bold text-stone-800">Installation Progress</h3>
-                                    <p className="text-[9px] text-stone-400 font-bold uppercase mt-1">{localChecklist.filter(i => i.checked).length} / {localChecklist.length} Items Cleared</p>
-                                </div>
-                                {checklistDirty && (
-                                    <button onClick={async () => {
-                                        const oldChecklist = normalizeChecklist(customer.project_checklist);
-                                        const newChecklist = localChecklist;
-                                        const checklistChanges = [];
-                                        newChecklist.forEach(item => {
-                                            const oldItem = oldChecklist.find(i => i.id === item.id);
-                                            const oldState = oldItem ? oldItem.checked : false;
-                                            if (oldState !== item.checked) {
-                                                checklistChanges.push(`${item.checked ? 'Checked' : 'Unchecked'} "${item.label}"`);
-                                            }
-                                        });
-                                        await onUpdate(customer.id, { project_checklist: localChecklist });
-                                        if (checklistChanges.length > 0) {
-                                            await logActivity(
-                                                user.id,
-                                                'update',
-                                                `${customer.customer_name}: Checklist update - ${checklistChanges.join(' | ')}`,
-                                                customer.id
-                                            );
-                                        }
-                                        setChecklistDirty(false);
-                                        fetchLogs();
-                                    }}
-                                        className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-[10px] font-bold">Save Checklist</button>
-                                )}
-                            </div>
-                            <div className="space-y-4">
-                                {sections.map(sec => (
-                                    <div key={sec} className="bg-white p-5 rounded-2xl border border-stone-100 shadow-sm">
-                                        <h4 className="text-[9px] font-bold text-stone-400 mb-4 uppercase tracking-widest border-b border-stone-50 pb-2">{sec}</h4>
-                                        <div className="flex flex-col gap-3">
-                                            {localChecklist.filter(i => i.section === sec).map(item => (
-                                                <label key={item.id} className="flex items-start gap-3 cursor-pointer group p-1.5 hover:bg-stone-50 rounded-lg transition-colors">
-                                                    <input type="checkbox" checked={item.checked} disabled={isFrozen} onChange={() => {
-                                                        const updated = localChecklist.map(i => i.id === item.id ? { ...i, checked: !i.checked, checkedAt: new Date().toISOString(), checkedBy: user.name } : i);
-                                                        setLocalChecklist(updated); setChecklistDirty(true);
-                                                    }} className="mt-0.5 rounded border-stone-300 text-amber-500 focus:ring-amber-500" />
+                    {activeTab === 'checklist' && (() => {
+                        const OPERATIONAL_CHECKLIST = [
+                            { key: 'stamp', label: 'Stamp' },
+                            { key: 'file_status', label: 'File Status' },
+                            { key: 'geb_inspection', label: 'GEB Inspection' },
+                            { key: 'subsidy_redeem', label: 'Subsidy Redeem' },
+                            { key: 'sfdc_photo', label: 'SFDC Photo' },
+                            { key: 'warranty_card', label: 'Warranty Card' },
+                            { key: 'insurance_status', label: 'Insurance Status' },
+                        ];
+                        const isOperationalChecklistDirty = OPERATIONAL_CHECKLIST.some(item => !!editData[item.key] !== !!customer[item.key]);
+                        const checkedCount = OPERATIONAL_CHECKLIST.filter(item => !!editData[item.key]).length;
+
+                        const handleSaveOperationalChecklist = async () => {
+                            const patch = {};
+                            const changes = [];
+                            OPERATIONAL_CHECKLIST.forEach(item => {
+                                const oldVal = !!customer[item.key];
+                                const newVal = !!editData[item.key];
+                                if (oldVal !== newVal) {
+                                    patch[item.key] = newVal;
+                                    changes.push(`${item.label}: ${oldVal ? 'Checked' : 'Unchecked'} → ${newVal ? 'Checked' : 'Unchecked'}`);
+                                }
+                            });
+
+                            await onUpdate(customer.id, patch);
+                            if (changes.length > 0) {
+                                await logActivity(user.id, 'update', `${customer.customer_name}: Operational checklist update - ${changes.join(' | ')}`, customer.id);
+                            }
+                            fetchLogs();
+                        };
+
+                        return (
+                            <div className="space-y-4 animate-in fade-in duration-300">
+                                {/* Material Delivery  */}
+                                <section id="section-equip_details">
+                                    <SectionHeader title="Material Delivery " id="equip_details" icon={Zap} />
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                        <EditableDetailItem label="PANEL SERIAL NO." field="panel_serial_no" value={editData.panel_serial_no} onChange={handleChange} isEditing={editingSection === 'equip_details'} />
+                                        <EditableDetailItem label="INVERTER SERIAL NO." field="inverter_serial_no" value={editData.inverter_serial_no} onChange={handleChange} isEditing={editingSection === 'equip_details'} />
+                                        <EditableDetailItem label="INVOICE NO" field="invoice_no" value={editData.invoice_no} onChange={handleChange} isEditing={editingSection === 'equip_details'} />
+                                    </div>
+                                </section>
+
+                                {/* Operational Progress */}
+                                <section>
+                                    <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-stone-100 shadow-sm mb-3">
+                                        <div>
+                                            <h3 className="text-sm font-bold text-stone-800">Operational Progress</h3>
+                                            <p className="text-[9px] text-stone-400 font-bold uppercase mt-1">{checkedCount} / {OPERATIONAL_CHECKLIST.length} Milestones Cleared</p>
+                                        </div>
+                                        {isOperationalChecklistDirty && (
+                                            <button onClick={handleSaveOperationalChecklist}
+                                                className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-[10px] font-bold transition-all shadow-md shadow-emerald-600/10">
+                                                Save Checklist
+                                            </button>
+                                        )}
+                                    </div>
+                                    <div className="bg-white p-4 rounded-2xl border border-stone-100 shadow-sm">
+                                        <div className="flex flex-col gap-2">
+                                            {OPERATIONAL_CHECKLIST.map(item => (
+                                                <label key={item.key} className="flex items-start gap-3 cursor-pointer group p-1 hover:bg-stone-50 rounded-lg transition-colors">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={!!editData[item.key]} 
+                                                        disabled={isFrozen} 
+                                                        onChange={() => handleChange(item.key, !editData[item.key])} 
+                                                        className="mt-0.5 rounded border-stone-300 text-amber-500 focus:ring-amber-500" 
+                                                    />
                                                     <div className="flex-1">
-                                                        <span className={`text-xs block ${item.checked ? 'text-stone-400 line-through' : 'text-stone-700 font-medium'}`}>{item.label}</span>
-                                                        {item.checked && <span className="text-[8px] text-stone-400 font-bold uppercase mt-0.5 block">By {item.checkedBy} on {formatLogDate(item.checkedAt)}</span>}
+                                                        <span className={`text-xs block ${editData[item.key] ? 'text-stone-400 line-through' : 'text-stone-700 font-semibold'}`}>{item.label}</span>
                                                     </div>
                                                 </label>
                                             ))}
                                         </div>
                                     </div>
-                                ))}
+                                </section>
                             </div>
-                        </div>
-                    )}
+                        );
+                    })()}
 
                     {/* ── NOTES & HISTORY ── */}
                     {activeTab === 'history' && (
                         <div className="space-y-8 animate-in fade-in duration-300">
-                            <section>
+                            <section id="section-rem">
                                 <SectionHeader title="Internal Remarks (Staff Only)" id="rem" icon={ShieldCheck} />
                                 {editingSection === 'rem' ? (
                                     <textarea value={editData.internal_remarks || ''} onChange={e => handleChange('internal_remarks', e.target.value)}
                                         className="w-full p-4 border rounded-2xl text-xs bg-stone-50 focus:ring-1 focus:ring-amber-400 outline-none" rows={4}
                                         placeholder="Sensitive notes visible only to internal staff..." />
                                 ) : (
-                                    <div className="bg-stone-100/50 p-4 rounded-2xl border border-stone-200 text-xs text-stone-600 italic">
+                                    <div className="bg-stone-100/50 p-4 rounded-2xl border border-stone-200 text-xs text-stone-600 italic whitespace-pre-line">
                                         {editData.internal_remarks || 'No internal remarks recorded yet.'}
                                     </div>
                                 )}
@@ -745,7 +1020,7 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                 </div>
 
                 {/* Save bar */}
-                {editingSection && (
+                {(editingSection || editData.payment_type !== customer.payment_type) && (
                     <div className="p-4 border-t border-stone-100 bg-white flex-shrink-0">
                         <button onClick={handleSave} disabled={saving}
                             className="w-full bg-stone-900 text-white py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-stone-800 transition-all">

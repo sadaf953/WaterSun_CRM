@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Zap, MapPin, User, Building2, Package, FolderOpen, ChevronDown, Lock, ShieldCheck } from 'lucide-react';
-import { PRIMARY_STAGES, FINANCIAL_TAGS, FINANCIAL_TAG_COLORS } from '../constants';
+import { PRIMARY_STAGES } from '../constants';
 import { formatINRCompact } from '../utils';
 
 export default function CustomerCard({ customer, onSelect, onMoveStage, isAdmin }) {
@@ -22,12 +22,25 @@ export default function CustomerCard({ customer, onSelect, onMoveStage, isAdmin 
         return () => document.removeEventListener('mousedown', handleClick);
     }, [showStageMenu]);
 
-    const totalPaid = Number(customer.total_received) || 0;
-    const quotedAmt = Number(customer.quoted_amount || 0);
-    const balance   = quotedAmt - totalPaid;
-    const tagInfo   = FINANCIAL_TAGS.find(f => f.id === customer.financial_tag);
-    const tagColors = customer.financial_tag ? (FINANCIAL_TAG_COLORS[customer.financial_tag] || {}) : {};
-    const isFrozen = customer.stage === 'Completed' && !isAdmin;
+    const isFrozen = customer.stage === 'COMPLETED' && !isAdmin;
+    const currentStageRemark = (() => {
+        if (!customer.stages_remarks) return '';
+        if (typeof customer.stages_remarks === 'object') {
+            return customer.stages_remarks[customer.stage] || '';
+        }
+        if (typeof customer.stages_remarks === 'string') {
+            try {
+                const parsed = JSON.parse(customer.stages_remarks);
+                if (typeof parsed === 'object' && parsed) {
+                    return parsed[customer.stage] || '';
+                }
+                return parsed || '';
+            } catch (e) {
+                return customer.stages_remarks;
+            }
+        }
+        return '';
+    })();
 
     return (
         <div className={`rounded-2xl border shadow-sm hover:shadow-md transition-all border-l-4 group flex flex-col ${isFrozen ? 'bg-stone-50/80 border-stone-200 border-l-emerald-500 opacity-80' : 'bg-white border-stone-100 border-l-amber-400'}`}>
@@ -37,27 +50,27 @@ export default function CustomerCard({ customer, onSelect, onMoveStage, isAdmin 
                     <h3 className="font-bold text-stone-800 group-hover:text-amber-600 transition-colors leading-tight">
                         {customer.customer_name}
                     </h3>
-                    <span className="text-[9px] bg-stone-50 text-stone-400 px-2 py-1 rounded font-bold uppercase ml-2 whitespace-nowrap">
+                    {/* <span className="text-[9px] bg-stone-50 text-stone-400 px-2 py-1 rounded font-bold uppercase ml-2 whitespace-nowrap">
                         {customer.crn || 'NO-CRN'}
-                    </span>
+                    </span> */}
                 </div>
                 <div className="grid grid-cols-2 gap-y-1.5 mb-3">
                     <div className="flex items-center gap-1.5 text-xs text-stone-500 font-medium">
                         <Zap size={11} className="text-amber-500 flex-shrink-0" />
-                        <span>{customer.capacity_kwp ? `${customer.capacity_kwp} kWp` : '–'} {customer.project_type || ''}</span>
+                        <span>{customer.system_capacity_kwp ? `${customer.system_capacity_kwp} kWp` : '–'} {customer.project_type || ''}</span>
                     </div>
                     <div className="flex items-center gap-1.5 text-xs text-stone-500 font-medium">
                         <MapPin size={11} className="text-stone-300 flex-shrink-0" />
-                        <span className="truncate">{customer.location || 'N/A'}</span>
+                        <span className="truncate">{customer.villages || 'N/A'}</span>
                     </div>
                     <div className="flex items-center gap-1.5 text-xs text-stone-500 font-medium">
                         <User size={11} className="text-stone-300 flex-shrink-0" />
-                        <span className="truncate">{customer.poc || 'No POC'}</span>
+                        <span className="truncate">{customer.dealer || 'No Dealer'}</span>
                     </div>
-                    {customer.phone && (
+                    {customer.phone_number && (
                         <div className="flex items-center gap-1.5 text-xs text-stone-500 font-medium">
                             <span className="text-stone-300">📞</span>
-                            <span>{customer.phone}</span>
+                            <span>{customer.phone_number}</span>
                         </div>
                     )}
                     {customer.company_branch && (
@@ -84,40 +97,12 @@ export default function CustomerCard({ customer, onSelect, onMoveStage, isAdmin 
             </div>
 
             {/* Bottom strip — not clickable (stops propagation via parent) */}
-            <div className="border-t border-stone-100 bg-stone-50/60 rounded-b-2xl" onClick={e => e.stopPropagation()}>
-                {/* Money bar */}
-                <div className="grid grid-cols-3 gap-0 divide-x divide-stone-100 px-1 py-3">
-                    <div className="text-center px-2">
-                        <p className="text-[9px] font-bold text-stone-400 uppercase tracking-wide">Quoted</p>
-                        <p className="text-xs font-bold text-stone-700 mt-0.5">{formatINRCompact(quotedAmt)}</p>
-                    </div>
-                    <div className="text-center px-2">
-                        <p className="text-[9px] font-bold text-stone-400 uppercase tracking-wide">Received</p>
-                        <p className="text-xs font-bold text-emerald-600 mt-0.5">{formatINRCompact(totalPaid)}</p>
-                    </div>
-                    <div className="text-center px-2">
-                        <p className="text-[9px] font-bold text-stone-400 uppercase tracking-wide">Balance</p>
-                        <p className={`text-xs font-bold mt-0.5 ${balance > 0 ? 'text-orange-500' : 'text-emerald-500'}`}>
-                            {formatINRCompact(balance)}
-                        </p>
-                    </div>
-                </div>
-
-                {/* Financial tag pill */}
-                {tagInfo && (
-                    <div className="px-4 pb-3 border-t border-stone-100 pt-2">
-                        <span className={`inline-flex items-center gap-1 text-[9px] px-2 py-0.5 rounded-full font-bold uppercase border ${tagColors.bg || 'bg-stone-50'} ${tagColors.text || 'text-stone-500'} ${tagColors.border || 'border-stone-200'}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${tagColors.dot || 'bg-stone-400'}`} />
-                            {tagInfo.label}
-                        </span>
-                    </div>
-                )}
-
-                {/* Internal remarks preview */}
-                {customer.internal_remarks && (
+            <div className="border-t border-stone-100 bg-stone-50/60 rounded-b-2xl animate-in fade-in duration-300" onClick={e => e.stopPropagation()}>
+                {/* Stage remarks preview */}
+                {currentStageRemark && (
                     <div className="px-4 pb-3 border-t border-stone-100 pt-2">
                         <p className="text-[10px] text-stone-500 italic leading-tight line-clamp-2">
-                            💬 {customer.internal_remarks}
+                            💬 {currentStageRemark}
                         </p>
                     </div>
                 )}
@@ -132,15 +117,15 @@ export default function CustomerCard({ customer, onSelect, onMoveStage, isAdmin 
                     ) : (
                         <div className="relative" ref={dropdownRef}>
                             <button onClick={() => setShowStageMenu(!showStageMenu)}
-                                className={`w-full flex items-center justify-between border rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${customer.stage === 'Completed' ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-700' : 'bg-white hover:bg-stone-100 border-stone-200 text-stone-600'}`}>
+                                className={`w-full flex items-center justify-between border rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${customer.stage === 'COMPLETED' ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-700' : 'bg-white hover:bg-stone-100 border-stone-200 text-stone-600'}`}>
                                 <span className="flex items-center gap-1.5 truncate">
-                                    {customer.stage === 'Completed' && <ShieldCheck className="w-3.5 h-3.5" />}
+                                    {customer.stage === 'COMPLETED' && <ShieldCheck className="w-3.5 h-3.5" />}
                                     {PRIMARY_STAGES.find(s => s.id === customer.stage)?.label || customer.stage || 'Move to Stage'}
                                 </span>
                                 <ChevronDown className={`w-4 h-4 flex-shrink-0 ml-1 transition-transform ${showStageMenu ? 'rotate-180' : ''}`} />
                             </button>
                             {showStageMenu && (
-                                <div className="absolute bottom-full left-0 right-0 mb-1 bg-white rounded-xl shadow-xl border border-stone-100 py-1 z-20 max-h-64 overflow-y-auto">
+                                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-xl border border-stone-100 py-1 z-20 max-h-64 overflow-y-auto">
                                     {PRIMARY_STAGES.map(stage => (
                                         <button key={stage.id}
                                             onClick={() => { onMoveStage(customer.id, stage.id); setShowStageMenu(false); }}

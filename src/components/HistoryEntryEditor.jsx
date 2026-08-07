@@ -21,6 +21,7 @@ const DEFAULT_COLORS = {
     Pending:    'bg-amber-100 text-amber-700',
     Rejected:   'bg-red-100 text-red-700',
     Submitted:  'bg-purple-100 text-purple-700',
+    Return:     'bg-rose-100 text-rose-700',
     Inspected:  'bg-sky-100 text-sky-700',
     Completed:  'bg-emerald-100 text-emerald-700',
 };
@@ -61,7 +62,7 @@ export default function HistoryEntryEditor({
                                 </span>
                                 {e.date && <p className="text-xs text-stone-400">{e.date}</p>}
                             </div>
-                            {e.remark && <p className="text-xs text-stone-600 mt-1">{e.remark}</p>}
+                            {e.remark && <p className="text-xs text-stone-600 mt-1 pl-4">💬 {e.remark}</p>}
                         </div>
                     );
                 })}

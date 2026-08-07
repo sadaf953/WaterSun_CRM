@@ -1,105 +1,164 @@
-// ─── AddLeadModal.jsx ─────────────────────────────────────────────────────────
-// Modal form for creating a new lead.
-// Branch, POC, project type fields are driven by the Supabase 'metadata' table.
-//
-// CLIENT CUSTOMISATION:
-//   • Change the static input fields in the STATIC_FIELDS array below.
-//   • Change metadata-driven dropdowns in the META_FIELDS array below.
-// ──────────────────────────────────────────────────────────────────────────────
+// src/components/AddLeadModal.jsx  —  Watersun Electrical Solutions Pvt Ltd
+// ─────────────────────────────────────────────────────────────────────────────
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Plus } from 'lucide-react';
+import { supabase } from '../supabase';
 import { DEFAULT_LEAD_FORM, DEFAULT_PROJECT_CHECKLIST } from '../models';
-import { toIndianCommas, parseIndianNumber } from '../utils';
 
-// Static text/number inputs
-const STATIC_FIELDS = [
-    { label: 'Customer Name *', field: 'customer_name', type: 'text' },
-    { label: 'Phone *',         field: 'phone',          type: 'tel' },
-    { label: 'Email',           field: 'email',          type: 'email' },
-    { label: 'Location',        field: 'location',       type: 'text' },
-    { label: 'Capacity (kWp)',  field: 'capacity_kwp',   type: 'number' },
-    { label: 'Quoted Amount (₹)', field: 'quoted_amount', type: 'money' },
-];
+// Metadata select component that supports adding a new option dynamically
+function AddLeadMetaSelect({ label, field, value, onChange, category, options = [] }) {
+    const [adding, setAdding] = useState(false);
+    const [newVal, setNewVal] = useState('');
+    const [localOptions, setLocalOptions] = useState(options);
 
-// Metadata-driven dropdowns — category must match Supabase 'metadata' table
-const META_FIELDS = [
-    { label: 'Branch', field: 'company_branch', category: 'company_branch' },
-    { label: 'POC',    field: 'poc',             category: 'poc' },
-];
+    useEffect(() => {
+        setLocalOptions(options);
+    }, [options.length]);
 
-export default function AddLeadModal({ onClose, onSave, meta }) {
-    const [form, setForm] = useState({ ...DEFAULT_LEAD_FORM });
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState('');
-    const set = (field, val) => setForm(prev => ({ ...prev, [field]: val }));
-
-    const handleSave = async () => {
-        if (!form.customer_name.trim()) { setError('Customer name is required'); return; }
-        if (!form.phone.trim())         { setError('Phone is required'); return; }
-        setSaving(true);
-        await onSave({
-            ...form,
-            quoted_amount: form.quoted_amount ? Number(form.quoted_amount) : null,
-            capacity_kwp:  form.capacity_kwp  ? Number(form.capacity_kwp)  : null,
-            payments: [],
-            follow_ups: [],
-            project_checklist: DEFAULT_PROJECT_CHECKLIST,
-            subsidy_history: [],
-            total_received: 0,
-        });
-        setSaving(false);
+    const handleAdd = async () => {
+        const trimmed = newVal.trim();
+        if (!trimmed) return;
+        // Persist to Supabase metadata table
+        await supabase.from('metadata').insert({ category, label: trimmed });
+        setLocalOptions(prev => [...prev, trimmed]);
+        onChange(field, trimmed);
+        setNewVal('');
+        setAdding(false);
     };
 
-    return (
-        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-            <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
-                <div className="bg-stone-900 px-5 py-4 flex justify-between items-center flex-shrink-0">
-                    <h2 className="text-lg font-bold text-white">Add New Lead</h2>
-                    <button onClick={onClose} className="text-white/60 hover:text-white"><X className="w-5 h-5" /></button>
+    if (adding) {
+        return (
+            <div className="space-y-1 bg-stone-50 p-2.5 rounded-xl border border-stone-200">
+                <label className="block text-[10px] font-bold text-stone-500 uppercase tracking-wider">{label} — New</label>
+                <div className="flex gap-1.5">
+                    <input autoFocus value={newVal} onChange={e => setNewVal(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleAdd()}
+                        placeholder={`New ${label}...`}
+                        className="flex-1 bg-white border border-stone-200 rounded-lg px-2.5 py-1 text-sm focus:border-amber-400 outline-none transition" />
+                    <button type="button" onClick={handleAdd} className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-white rounded-lg text-xs font-bold transition">Add</button>
+                    <button type="button" onClick={() => setAdding(false)} className="px-2 py-1.5 bg-stone-200 text-stone-600 rounded-lg text-xs hover:bg-stone-300 transition">✕</button>
                 </div>
-                <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                    {error && <p className="text-red-500 text-xs bg-red-50 p-2 rounded-lg">{error}</p>}
+            </div>
+        );
+    }
 
-                    {STATIC_FIELDS.map(({ label, field, type }) => (
-                        <div key={field}>
-                            <label className="block text-xs font-medium text-stone-600 mb-1">{label}</label>
-                            {type === 'money' ? (
-                                <input type="text" inputMode="decimal" value={form[field] ? toIndianCommas(form[field]) : ''}
-                                    onChange={e => set(field, parseIndianNumber(e.target.value))}
-                                    placeholder="e.g. 5,00,000"
-                                    className="w-full px-3 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300" />
-                            ) : (
-                                <input type={type} value={form[field]} onChange={e => set(field, e.target.value)}
-                                    className="w-full px-3 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300" />
-                            )}
-                        </div>
-                    ))}
+    return (
+        <div>
+            <label className="block text-[10px] font-bold text-stone-500 uppercase tracking-wider mb-1">{label}</label>
+            <div className="flex gap-1.5">
+                <select value={value || ''} onChange={e => onChange(field, e.target.value)}
+                    className="flex-1 bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 text-sm focus:border-amber-400 outline-none transition">
+                    <option value="">Select {label}</option>
+                    {localOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+                {category === 'module_brand' && (
+                    <button type="button" onClick={() => setAdding(true)} title="Add new option"
+                        className="px-3 py-2 bg-stone-100 hover:bg-amber-50 hover:text-amber-600 text-stone-400 rounded-xl text-xs transition border border-stone-200 flex items-center justify-center">
+                        <Plus className="w-4 h-4" />
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+}
 
-                    {META_FIELDS.map(({ label, field, category }) => (
-                        <div key={field}>
-                            <label className="block text-xs font-medium text-stone-600 mb-1">{label}</label>
-                            <select value={form[field]} onChange={e => set(field, e.target.value)}
-                                className="w-full px-3 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300">
-                                <option value="">Select...</option>
-                                {(meta[category] || []).map(opt => <option key={opt}>{opt}</option>)}
-                            </select>
-                        </div>
-                    ))}
+export default function AddLeadModal({ isOpen, onClose, onSave, meta = {} }) {
+    const [formData, setFormData] = useState({ ...DEFAULT_LEAD_FORM });
 
-                    <div>
-                        <label className="block text-xs font-medium text-stone-600 mb-1">Project Type</label>
-                        <select value={form.project_type} onChange={e => set('project_type', e.target.value)}
-                            className="w-full px-3 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300">
-                            {(meta['project_type'] || ['On-Grid', 'Hybrid']).map(t => <option key={t}>{t}</option>)}
-                        </select>
+    useEffect(() => {
+        if (isOpen) setFormData({ ...DEFAULT_LEAD_FORM });
+    }, [isOpen]);
+
+    if (!isOpen) return null;
+
+    const handleChange = (field, value) => {
+        setFormData(prev => ({ ...prev, [field]: value }));
+    };
+
+    const handleSave = () => {
+        if (!formData.customer_name?.trim()) return alert('Customer Name is required');
+        if (!formData.phone_number?.toString().trim()) return alert('Customer Phone Number is required');
+        if (!formData.dealer?.trim()) return alert('Dealer Name is required');
+        if (!formData.system_capacity_kwp) return alert('System Capacity is required');
+
+        onSave({
+            ...formData,
+            project_checklist: DEFAULT_PROJECT_CHECKLIST,
+        });
+        onClose();
+    };
+
+    // Explicit order list of fields to display
+    const formFields = [
+        { label: 'Customer Name', field: 'customer_name', type: 'text', required: true },
+        { label: 'Customer Phone Number', field: 'phone_number', type: 'number', required: true },
+        { label: 'Email Address', field: 'email_address', type: 'text', required: false },
+        { label: 'Sub Dealer Name', field: 'sub_dealer', type: 'text', required: false },
+        { label: 'Dealer Name', field: 'dealer', type: 'text', required: true },
+        { label: 'Consumer No', field: 'consumer_no', type: 'text', required: false },
+        { label: 'System Capacity (kWp)', field: 'system_capacity_kwp', type: 'number', required: true },
+        { label: 'System Brand', field: 'module_brand', type: 'select', category: 'module_brand', required: false },
+        { label: 'Village', field: 'villages', type: 'text', required: false },
+        { label: 'Sub Division', field: 'sub_divisions', type: 'text', required: false },
+        { label: 'File No', field: 'folder_no', type: 'text', required: false },
+        { label: 'Payment Type', field: 'payment_type', type: 'select', category: 'payment_type', required: false },
+    ];
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto mx-4">
+                <div className="flex items-center justify-between p-5 border-b border-stone-100 sticky top-0 bg-white z-10 rounded-t-2xl">
+                    <h2 className="text-base font-black text-stone-800">Add New Lead</h2>
+                    <button onClick={onClose} className="p-1.5 hover:bg-stone-100 rounded-lg transition cursor-pointer">
+                        <X className="w-4 h-4 text-stone-400" />
+                    </button>
+                </div>
+
+                <div className="p-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {formFields.map(({ label, field, type, required, category }) => {
+                            if (type === 'select') {
+                                return (
+                                    <div key={field}>
+                                        <AddLeadMetaSelect
+                                            label={label}
+                                            field={field}
+                                            value={formData[field]}
+                                            onChange={handleChange}
+                                            category={category}
+                                            options={meta[category] || []}
+                                        />
+                                    </div>
+                                );
+                            }
+
+                            return (
+                                <div key={field}>
+                                    <label className="block text-[10px] font-bold text-stone-500 uppercase tracking-wider mb-1">
+                                        {label} {required && <span className="text-red-500 font-bold">*</span>}
+                                    </label>
+                                    <input
+                                        type={type}
+                                        value={formData[field] ?? ''}
+                                        onChange={e => handleChange(field, e.target.value)}
+                                        className="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:border-amber-400 outline-none transition"
+                                        placeholder={label}
+                                    />
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
-                <div className="border-t p-4 flex gap-3 flex-shrink-0">
-                    <button onClick={onClose} className="flex-1 py-2.5 border border-stone-300 text-stone-700 rounded-xl text-sm font-medium">Cancel</button>
-                    <button onClick={handleSave} disabled={saving}
-                        className="flex-1 py-2.5 bg-stone-900 text-white rounded-xl text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2">
-                        {saving ? 'Saving...' : <><Plus className="w-4 h-4" /> Add Lead</>}
+
+                <div className="flex gap-2 p-5 border-t border-stone-100 sticky bottom-0 bg-white rounded-b-2xl">
+                    <button onClick={onClose}
+                        className="flex-1 py-2.5 text-xs font-bold text-stone-500 bg-stone-100 hover:bg-stone-200 rounded-xl transition cursor-pointer">
+                        Cancel
+                    </button>
+                    <button onClick={handleSave}
+                        className="flex-1 py-2.5 text-xs font-black text-white bg-amber-500 hover:bg-amber-400 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5">
+                        <Plus className="w-3.5 h-3.5" /> Add Lead
                     </button>
                 </div>
             </div>

@@ -62,7 +62,7 @@ export default function AgentForm({ user, onLogout }) {
     const empty = {
         customer_name: '', phone: '', email: '', location: '',
         company_branch: '', capacity_kwp: '', project_type: 'On-Grid',
-        poc: '', quoted_amount: '',
+        poc: '',
     };
 
     const [form, setForm] = useState(empty);
@@ -94,16 +94,15 @@ export default function AgentForm({ user, onLogout }) {
         try {
             const { error } = await supabase.from('admin').insert({
                 customer_name: form.customer_name.trim(),
-                phone: form.phone.trim(),
-                email: form.email.trim() || null,
+                phone_number: form.phone.trim(),
+                email_address: form.email.trim() || null,
                 location: form.location.trim(),
                 company_branch: form.company_branch,
-                capacity_kwp: form.capacity_kwp ? Number(form.capacity_kwp) : null,
+                system_capacity_kwp: form.capacity_kwp ? Number(form.capacity_kwp) : null,
                 project_type: form.project_type,
-                poc: form.poc || user.name,
-                quoted_amount: form.quoted_amount ? Number(form.quoted_amount) : null,
+                dealer: form.poc || user.name,
                 application_done_by: user.name,
-                stage: 'Leads',
+                stage: 'LEADS',
                 payments: [],
                 follow_ups: [],
                 project_checklist: [],
@@ -221,12 +220,6 @@ export default function AgentForm({ user, onLogout }) {
                     <Field label="Capacity (kWp)" required error={errors.capacity_kwp}>
                         <input type="number" value={form.capacity_kwp} onChange={e => set('capacity_kwp', e.target.value)}
                             placeholder="e.g. 5" min="0" step="0.5" className={inputClass('capacity_kwp')} />
-                    </Field>
-
-                    <Field label="Quoted Amount (₹)">
-                        <input type="text" inputMode="decimal" value={form.quoted_amount ? toIndianCommas(form.quoted_amount) : ''}
-                            onChange={e => set('quoted_amount', parseIndianNumber(e.target.value))}
-                            placeholder="e.g. 5,00,000" className={inputClass('quoted_amount')} />
                     </Field>
 
                     <Field label="System Type">

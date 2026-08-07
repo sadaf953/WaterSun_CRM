@@ -14,7 +14,6 @@ import { logActivity, useMetadata, exportAllToCSV } from '../utils';
 import { PRIMARY_STAGES } from '../constants';
 
 import DashboardView from './DashboardView';
-import FinancialView from './FinancialView';
 import CustomerCard from './CustomerCard';
 import CustomerDetailModal from './CustomerDetailModal';
 import AddLeadModal from './AddLeadModal';
@@ -24,7 +23,7 @@ import TrashView from './TrashView';
 import AgentForm from './agentform';
 
 import {
-    LayoutDashboard, IndianRupee, Activity, UserCog, Menu, X,
+    LayoutDashboard, Activity, UserCog, Menu, X,
     Search, Plus, Download, LogOut, Sun, Trash2, Users,
 } from 'lucide-react';
 
@@ -34,10 +33,10 @@ export default function Dashboard({ user, onLogout }) {
     const [currentView, setCurrentView] = useState('dashboard');
     const [selectedStage, setSelectedStage] = useState('Leads');
     const [stageSearch, setStageSearch] = useState('');    // per-stage search
-    const [pocFilterInput, setPocFilterInput] = useState('');  // typed poc name (not yet applied)
-    const [pocFilter, setPocFilter] = useState('');    // applied poc filter
-    const [showPocDrop, setShowPocDrop] = useState(false);
-    const pocFilterRef = useRef(null);
+    const [dealerFilterInput, setDealerFilterInput] = useState('');  // typed dealer name (not yet applied)
+    const [dealerFilter, setDealerFilter] = useState('');    // applied dealer filter
+    const [showDealerDrop, setShowDealerDrop] = useState(false);
+    const dealerFilterRef = useRef(null);
     const [globalSearch, setGlobalSearch] = useState('');    // global search
     const [globalResults, setGlobalResults] = useState([]);
     const [showGlobalDrop, setShowGlobalDrop] = useState(false);
@@ -65,14 +64,26 @@ export default function Dashboard({ user, onLogout }) {
         return () => supabase.removeChannel(channel);
     }, []);
 
+    // Sync selectedCustomer state with fresh database values when updates occur
+    useEffect(() => {
+        if (selectedCustomer) {
+            const fresh = customers.find(c => c.id === selectedCustomer.id);
+            if (fresh) {
+                if (JSON.stringify(fresh) !== JSON.stringify(selectedCustomer)) {
+                    setSelectedCustomer(fresh);
+                }
+            }
+        }
+    }, [customers, selectedCustomer]);
+
     // Close global search / poc dropdowns when clicking outside
     useEffect(() => {
         const handler = (e) => {
             if (globalSearchRef.current && !globalSearchRef.current.contains(e.target)) {
                 setShowGlobalDrop(false);
             }
-            if (pocFilterRef.current && !pocFilterRef.current.contains(e.target)) {
-                setShowPocDrop(false);
+            if (dealerFilterRef.current && !dealerFilterRef.current.contains(e.target)) {
+                setShowDealerDrop(false);
             }
         };
         document.addEventListener('mousedown', handler);
@@ -84,20 +95,20 @@ export default function Dashboard({ user, onLogout }) {
         const q = globalSearch.trim().toLowerCase();
         if (!q) { setGlobalResults([]); setShowGlobalDrop(false); return; }
         const activeNow = customers.filter(c => !c.deleted_at);
-        const pocMatched = pocFilter
-            ? activeNow.filter(c => c.poc?.toLowerCase() === pocFilter.toLowerCase())
+        const dealerMatched = dealerFilter
+            ? activeNow.filter(c => c.dealer?.toLowerCase() === dealerFilter.toLowerCase())
             : activeNow;
         const authorized = user.userType === 'admin'
-            ? pocMatched
-            : pocMatched.filter(c => c.poc === user.name);
+            ? dealerMatched
+            : dealerMatched.filter(c => c.dealer === user.name);
         const results = authorized.filter(c =>
             c.customer_name?.toLowerCase().includes(q) ||
-            c.phone?.includes(globalSearch.trim()) ||
+            c.phone_number?.includes(globalSearch.trim()) ||
             c.crn?.toLowerCase().includes(q)
         ).slice(0, 8);
         setGlobalResults(results);
         setShowGlobalDrop(results.length > 0);
-    }, [globalSearch, customers, pocFilter]);
+    }, [globalSearch, customers, dealerFilter]);
 
     const handleGlobalSelect = (customer) => {
         // Navigate to the customer's stage so context is clear
@@ -116,6 +127,9 @@ export default function Dashboard({ user, onLogout }) {
         if (!error) {
             setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
             if (selectedCustomer?.id === id) setSelectedCustomer(prev => ({ ...prev, ...updates }));
+        } else {
+            console.error('Error updating customer:', error);
+            alert('Database Save Error: ' + error.message + '\nDetails: ' + error.details);
         }
     };
 
@@ -144,16 +158,73 @@ export default function Dashboard({ user, onLogout }) {
 
     const handleMoveStage = async (id, newStage) => {
         const customer = customers.find(c => c.id === id);
-        await handleUpdateCustomer(id, { stage: newStage });
-        logActivity(user.id, 'stage_change',
-            `${customer?.customer_name}: Moved to ${PRIMARY_STAGES.find(s => s.id === newStage)?.label || newStage}`
+        if (!customer) return;
+        const oldStage = customer.stage;
+        
+        // Get old remark from stages_remarks mapping
+        const oldRemark = (typeof customer.stages_remarks === 'object' && customer.stages_remarks ? customer.stages_remarks[oldStage] : '') || '';
+        
+        let updatedInternalRemarks = customer.internal_remarks || '';
+        if (oldRemark.trim()) {
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const now = new Date();
+            const d = now.getDate().toString().padStart(2, '0');
+            const m = months[now.getMonth()];
+            let hours = now.getHours();
+            const minutes = now.getMinutes().toString().padStart(2, '0');
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            hours = hours % 12;
+            hours = hours ? hours : 12;
+            const h = hours.toString().padStart(2, '0');
+            const formattedTime = `${d} ${m}, ${h}:${minutes} ${ampm}`;
+            
+            const appendText = `${oldStage} (${formattedTime}): ${oldRemark.trim()}`;
+            updatedInternalRemarks = updatedInternalRemarks
+                ? `${updatedInternalRemarks}\n${appendText}`
+                : appendText;
+        }
+
+        const prevObj = typeof customer.stages_remarks === 'object' && customer.stages_remarks ? customer.stages_remarks : {};
+        const updatedRemarks = {
+            ...prevObj,
+            [oldStage]: ''
+        };
+
+        await handleUpdateCustomer(id, {
+            stage: newStage,
+            stages_remarks: updatedRemarks,
+            internal_remarks: updatedInternalRemarks
+        });
+
+        await logActivity(user.id, 'stage_change',
+            `${customer.customer_name}: STAGE: ${oldStage} → ${newStage}`,
+            id
         );
     };
 
     const handleAddLead = async (data) => {
         const leadData = { ...data, application_done_by: user.name, created_at: new Date().toISOString() };
-        const { error } = await supabase.from('admin').insert(leadData).select().single();
-        if (!error) {
+        
+        // Clean up or format values
+        if (leadData.system_capacity_kwp) {
+            leadData.system_capacity_kwp = Number(leadData.system_capacity_kwp);
+        }
+
+        // Map empty strings to null to avoid database numeric/type syntax errors
+        const insertData = {};
+        Object.keys(leadData).forEach(key => {
+            if (leadData[key] === '') {
+                insertData[key] = null;
+            } else {
+                insertData[key] = leadData[key];
+            }
+        });
+
+        const { error } = await supabase.from('admin').insert(insertData).select().single();
+        if (error) {
+            console.error("Error adding lead to Supabase:", error);
+            alert(`Failed to add lead: ${error.message} (Code: ${error.code})`);
+        } else {
             logActivity(user.id, 'create', `Added new lead: ${data.customer_name}`, `Done by: ${user.name}`);
             setShowAddLead(false);
             fetchData();
@@ -167,31 +238,30 @@ export default function Dashboard({ user, onLogout }) {
     // up for every role right now. Revisit this once poc-matching is sorted.
     const isAuthorized = (c) => true;
 
-    // Distinct POC names across all active leads, for the typeahead dropdown
-    const uniquePocs = [...new Set(active.map(c => c.poc).filter(Boolean))].sort();
-    const pocSuggestions = pocFilterInput.trim()
-        ? uniquePocs.filter(p => p.toLowerCase().includes(pocFilterInput.trim().toLowerCase()))
-        : uniquePocs;
+    // Distinct Dealer names across all active leads, for the typeahead dropdown
+    const uniqueDealers = [...new Set(active.map(c => c.dealer).filter(Boolean))].sort();
+    const dealerSuggestions = dealerFilterInput.trim()
+        ? uniqueDealers.filter(p => p.toLowerCase().includes(dealerFilterInput.trim().toLowerCase()))
+        : uniqueDealers;
 
-    const matchesPocFilter = (c) => !pocFilter || c.poc?.toLowerCase() === pocFilter.toLowerCase();
+    const matchesDealerFilter = (c) => !dealerFilter || c.dealer?.toLowerCase() === dealerFilter.toLowerCase();
 
-    // Everything downstream — stage counts, the stages grid, dashboard stats,
-    // financial tags — is built from this one poc-scoped list
-    const pocScoped = active.filter(c => matchesPocFilter(c) && isAuthorized(c));
+    // Everything downstream — stage counts, the stages grid, dashboard stats
+    // is built from this one dealer-scoped list
+    const dealerScoped = active.filter(c => matchesDealerFilter(c) && isAuthorized(c));
 
     const stageCounts = PRIMARY_STAGES.reduce((acc, s) => {
-        acc[s.id] = pocScoped.filter(c => c.stage === s.id).length;
+        acc[s.id] = dealerScoped.filter(c => c.stage === s.id).length;
         return acc;
     }, {});
-    const financialTagCount = pocScoped.filter(c => c.financial_tag).length;
     const trashCount = trashed.length;
 
-    // Per-stage filtered cards — now respects the poc filter too
-    const filtered = pocScoped.filter(c => {
+    // Per-stage filtered cards — now respects the dealer filter too
+    const filtered = dealerScoped.filter(c => {
         const q = stageSearch.toLowerCase();
         const matchesSearch = !stageSearch ||
             c.customer_name?.toLowerCase().includes(q) ||
-            c.phone?.includes(stageSearch) ||
+            c.phone_number?.includes(stageSearch) ||
             c.crn?.toLowerCase().includes(q);
         return c.stage === selectedStage && matchesSearch;
     });
@@ -225,11 +295,10 @@ export default function Dashboard({ user, onLogout }) {
 
     const headerTitle =
         currentView === 'dashboard' ? 'Business Dashboard'
-            : currentView === 'financial' ? 'Financial Tags'
-                : currentView === 'activity' ? 'Activity Log'
-                    : currentView === 'users' ? 'User Management'
-                        : currentView === 'trash' ? 'Trash'
-                            : PRIMARY_STAGES.find(s => s.id === selectedStage)?.label || selectedStage;
+            : currentView === 'activity' ? 'Activity Log'
+                : currentView === 'users' ? 'User Management'
+                    : currentView === 'trash' ? 'Trash'
+                        : PRIMARY_STAGES.find(s => s.id === selectedStage)?.label || selectedStage;
 
     return (
         <div className="min-h-screen bg-[#FCFBFA] flex">
@@ -243,7 +312,7 @@ export default function Dashboard({ user, onLogout }) {
                             <Sun size={20} />
                         </div>
                         <div>
-                            <h1 className="text-sm font-bold text-stone-800">SolarFlow</h1>
+                            <h1 className="text-sm font-bold text-stone-800">Watersun</h1>
                             <p className="text-[9px] text-stone-400 font-bold uppercase tracking-widest">Portal</p>
                         </div>
                     </div>
@@ -253,20 +322,7 @@ export default function Dashboard({ user, onLogout }) {
                 <div className="flex-1 overflow-y-auto p-3">
                     <NavBtn view="dashboard" icon={LayoutDashboard} label="Dashboard" count={0} />
 
-                    {/* Financial */}
-                    <div className="mt-4 mb-1">
-                        <div className="text-[9px] uppercase font-bold text-stone-300 px-3 pb-2 tracking-widest">Financial</div>
-                        <button onClick={() => { setCurrentView('financial'); setSidebarOpen(false); }}
-                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold mb-0.5 transition-colors ${currentView === 'financial' ? 'bg-stone-900 text-white' : 'text-stone-600 hover:bg-stone-100'}`}>
-                            <IndianRupee className="w-4 h-4 flex-shrink-0" />
-                            <span className="flex-1 text-left">Financial Tags</span>
-                            {financialTagCount > 0 && (
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full min-w-[20px] text-center font-bold ${currentView === 'financial' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-600'}`}>
-                                    {financialTagCount}
-                                </span>
-                            )}
-                        </button>
-                    </div>
+
 
                     {/* Project Stages — identical for every role */}
                     <div className="text-[9px] uppercase font-bold text-stone-300 px-3 pt-4 pb-2 tracking-widest">Project Stages</div>
@@ -310,11 +366,9 @@ export default function Dashboard({ user, onLogout }) {
                     <div className="flex items-center gap-3">
                         <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-stone-500"><Menu className="w-6 h-6" /></button>
                         <h2 className="font-bold text-stone-800">{headerTitle}</h2>
-                        {currentView === 'financial' && financialTagCount > 0 && (
-                            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">{financialTagCount} tagged</span>
-                        )}
-                        {pocFilter && (
-                            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">POC: {pocFilter}</span>
+
+                        {dealerFilter && (
+                            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">Dealer: {dealerFilter}</span>
                         )}
                     </div>
 
@@ -338,10 +392,10 @@ export default function Dashboard({ user, onLogout }) {
                                             className="w-full px-4 py-2.5 text-left hover:bg-amber-50 transition-colors group">
                                             <div className="flex items-center justify-between">
                                                 <p className="text-sm font-semibold text-stone-800 group-hover:text-amber-700">{c.customer_name}</p>
-                                                <span className="text-[9px] bg-stone-100 text-stone-400 px-1.5 py-0.5 rounded font-bold uppercase ml-2">{c.crn || '–'}</span>
+                                                {/* <span className="text-[9px] bg-stone-100 text-stone-400 px-1.5 py-0.5 rounded font-bold uppercase ml-2">{c.crn || '–'}</span> */}
                                             </div>
                                             <p className="text-[10px] text-stone-400 mt-0.5">
-                                                {PRIMARY_STAGES.find(s => s.id === c.stage)?.label || c.stage} · {c.phone || 'No phone'}
+                                                {PRIMARY_STAGES.find(s => s.id === c.stage)?.label || c.stage} · {c.phone_number || 'No phone'}
                                             </p>
                                         </button>
                                     ))}
@@ -359,31 +413,31 @@ export default function Dashboard({ user, onLogout }) {
                             </div>
                         )}
 
-                        {/* POC filter — applies everywhere: dashboard stats, financial, and every stage */}
-                        <div className="relative hidden lg:flex items-center gap-1.5" ref={pocFilterRef}>
+                        {/* Dealer filter — applies everywhere: dashboard stats, and every stage */}
+                        <div className="relative hidden lg:flex items-center gap-1.5" ref={dealerFilterRef}>
                             <input
                                 type="text"
-                                placeholder="POC name..."
-                                value={pocFilterInput}
-                                onChange={e => { setPocFilterInput(e.target.value); setShowPocDrop(true); }}
-                                onFocus={() => setShowPocDrop(true)}
-                                onKeyDown={e => e.key === 'Enter' && (setPocFilter(pocFilterInput.trim()), setShowPocDrop(false))}
+                                placeholder="Dealer name..."
+                                value={dealerFilterInput}
+                                onChange={e => { setDealerFilterInput(e.target.value); setShowDealerDrop(true); }}
+                                onFocus={() => setShowDealerDrop(true)}
+                                onKeyDown={e => e.key === 'Enter' && (setDealerFilter(dealerFilterInput.trim()), setShowDealerDrop(false))}
                                 className="px-3 py-2 bg-stone-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 w-32"
                             />
                             <button
                                 onClick={() => {
-                                    setPocFilter(pocFilterInput.trim());
-                                    setShowPocDrop(false);
+                                    setDealerFilter(dealerFilterInput.trim());
+                                    setShowDealerDrop(false);
                                 }}
                                 className="px-3 py-2 rounded-xl text-xs font-medium bg-stone-900 text-white hover:bg-stone-800 transition-colors">
                                 Apply
                             </button>
-                            {(pocFilter || pocFilterInput) && (
+                            {(dealerFilter || dealerFilterInput) && (
                                 <button
                                     onClick={() => {
-                                        setPocFilter('');
-                                        setPocFilterInput('');
-                                        setShowPocDrop(false);
+                                        setDealerFilter('');
+                                        setDealerFilterInput('');
+                                        setShowDealerDrop(false);
                                     }}
                                     className="px-3 py-2 rounded-xl text-xs font-medium bg-stone-200 text-stone-700 hover:bg-stone-300 transition-colors">
                                     Clear
@@ -391,12 +445,12 @@ export default function Dashboard({ user, onLogout }) {
                             )}
 
                             {/* Typeahead suggestions */}
-                            {showPocDrop && pocSuggestions.length > 0 && (
+                            {showDealerDrop && dealerSuggestions.length > 0 && (
                                 <div className="absolute top-full mt-1 left-0 w-32 bg-white rounded-xl shadow-xl border border-stone-100 py-1 z-50 overflow-hidden max-h-48 overflow-y-auto">
-                                    {pocSuggestions.map(name => (
+                                    {dealerSuggestions.map(name => (
                                         <button
                                             key={name}
-                                            onClick={() => { setPocFilterInput(name); setShowPocDrop(false); }}
+                                            onClick={() => { setDealerFilterInput(name); setShowDealerDrop(false); }}
                                             className="w-full px-3 py-1.5 text-left text-xs text-stone-700 hover:bg-amber-50 hover:text-amber-700 transition-colors truncate">
                                             {name}
                                         </button>
@@ -424,8 +478,8 @@ export default function Dashboard({ user, onLogout }) {
 
                 {/* View router */}
                 <div className="flex-1 p-4 lg:p-6">
-                    {currentView === 'dashboard' && <DashboardView customers={pocScoped} loading={loading} />}
-                    {currentView === 'financial' && <FinancialView customers={pocScoped} onSelectCustomer={setSelectedCustomer} />}
+                    {currentView === 'dashboard' && <DashboardView customers={dealerScoped} loading={loading} />}
+
                     {currentView === 'activity' && user.userType === 'admin' && <ActivityLogView />}
                     {currentView === 'users' && user.userType === 'admin' && <UserManagementView currentUser={user} />}
 
@@ -454,8 +508,8 @@ export default function Dashboard({ user, onLogout }) {
                         ) : (
                             <div className="flex flex-col items-center justify-center h-64 text-stone-400">
                                 <Users className="w-12 h-12 mb-3 text-stone-200" />
-                                <p className="font-medium text-stone-500">{(stageSearch || pocFilter) ? 'No matching results in this stage' : 'No customers in this stage'}</p>
-                                <p className="text-sm mt-1">{pocFilter ? `No leads with POC "${pocFilter}" here` : stageSearch ? 'Try the global search bar to find across all stages' : 'Move customers here or add a new lead'}</p>
+                                <p className="font-medium text-stone-500">{(stageSearch || dealerFilter) ? 'No matching results in this stage' : 'No customers in this stage'}</p>
+                                <p className="text-sm mt-1">{dealerFilter ? `No leads with Dealer "${dealerFilter}" here` : stageSearch ? 'Try the global search bar to find across all stages' : 'Move customers here or add a new lead'}</p>
                             </div>
                         )
                     )}
@@ -473,7 +527,7 @@ export default function Dashboard({ user, onLogout }) {
                     meta={meta}
                 />
             )}
-            {showAddLead && <AddLeadModal onClose={() => setShowAddLead(false)} onSave={handleAddLead} meta={meta} />}
+            {showAddLead && <AddLeadModal isOpen={showAddLead} onClose={() => setShowAddLead(false)} onSave={handleAddLead} meta={meta} />}
         </div>
     );
 }

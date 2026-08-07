@@ -41,12 +41,8 @@ export default function DashboardView({ customers = [], loading }) {
     const active = customers.filter(c => !c.deleted_at);
 
     const totalProjects   = active.length;
-    const completedCount  = active.filter(c => c.stage === 'Completed').length;
-    const liveProjects    = active.filter(c => c.stage !== 'Completed').length;
-
-    const totalQuoted    = active.reduce((s, c) => s + (Number(c.quoted_amount)   || 0), 0);
-    const totalReceived  = active.reduce((s, c) => s + (Number(c.total_received)  || 0), 0);
-    const totalDues      = active.reduce((s, c) => s + (Number(c.receivables)     || 0), 0);
+    const completedCount  = active.filter(c => c.stage === 'COMPLETED').length;
+    const liveProjects    = active.filter(c => c.stage !== 'COMPLETED').length;
 
     return (
         <div className="space-y-8 animate-in fade-in duration-700">
@@ -55,25 +51,6 @@ export default function DashboardView({ customers = [], loading }) {
                 <MetricBox label="Total Database" value={totalProjects}  icon={FolderOpen}   color="blue"    sub={`${active.length} active records`} />
                 <MetricBox label="Live Projects"  value={liveProjects}   icon={Activity}     color="amber"   sub="Excluding Completed" />
                 <MetricBox label="Completed"      value={completedCount} icon={CheckCircle2} color="emerald" sub="Fully commissioned" />
-            </div>
-
-            {/* Financial summary */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-white p-6 rounded-[28px] border border-stone-100 shadow-sm">
-                    <p className="text-[9px] font-bold text-stone-400 uppercase tracking-widest mb-1">Total Sales (Quoted)</p>
-                    <p className="text-2xl font-bold text-stone-800">{fmtLakh(totalQuoted)}</p>
-                    <p className="text-xs text-stone-400 mt-1">₹{toIndianCommas(totalQuoted)}</p>
-                </div>
-                <div className="bg-white p-6 rounded-[28px] border border-stone-100 shadow-sm">
-                    <p className="text-[9px] font-bold text-stone-400 uppercase tracking-widest mb-1">Cash Collected</p>
-                    <p className="text-2xl font-bold text-emerald-600">{fmtLakh(totalReceived)}</p>
-                    <p className="text-xs text-stone-400 mt-1">₹{toIndianCommas(totalReceived)}</p>
-                </div>
-                <div className="bg-white p-6 rounded-[28px] border border-stone-100 shadow-sm border-b-4 border-b-orange-400">
-                    <p className="text-[9px] font-bold text-stone-400 uppercase tracking-widest mb-1">Outstanding Dues</p>
-                    <p className="text-2xl font-bold text-orange-600">{fmtLakh(totalDues)}</p>
-                    <p className="text-xs text-stone-400 mt-1">₹{toIndianCommas(totalDues)}</p>
-                </div>
             </div>
 
             {/* Stage pipeline bar chart */}
@@ -91,7 +68,7 @@ export default function DashboardView({ customers = [], loading }) {
                                 </div>
                                 <div className="h-1.5 bg-stone-50 rounded-full overflow-hidden">
                                     <div
-                                        className={`h-full transition-all duration-1000 rounded-full ${stage.id === 'Completed' ? 'bg-emerald-400' : 'bg-amber-400'}`}
+                                        className={`h-full transition-all duration-1000 rounded-full ${stage.id === 'COMPLETED' ? 'bg-emerald-400' : 'bg-amber-400'}`}
                                         style={{ width: `${perc}%` }}
                                     />
                                 </div>

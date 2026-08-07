@@ -3,7 +3,7 @@
 // ──────────────────────────────────────────────────────────────────────────────
 
 import { supabase } from './supabase';
-import { PRIMARY_STAGES, FINANCIAL_TAGS } from './constants';
+import { PRIMARY_STAGES } from './constants';
 
 // ─── Activity Logging ─────────────────────────────────────────────────────────
 export async function logActivity(userId, action, message, details = '') {
@@ -40,22 +40,18 @@ export function useMetadata() {
 export function exportAllToCSV(customers) {
     const headers = [
         'CRN', 'Customer Name', 'Phone', 'Email', 'Location', 'Branch',
-        'Capacity (kWp)', 'Project Type', 'POC', 'Stage', 'Financial Tag',
-        'Quoted Amount', 'Bank Quote', 'Receivables', 'Discount',
+        'Capacity (kWp)', 'Project Type', 'POC', 'Stage',
         'Payment Type', 'Bank Name', 'Account #', 'IFSC', 'Loan Application #',
         'Meter Category', 'EB Number', 'DTR Code', 'Sanctioned Load',
         'DISCOM Division', 'Net Metering', 'Vendor', 'Aadhar',
         'Application #', 'Application Date', 'Google Docs', 'Created At',
     ];
     const rows = customers.map(c => {
-        const tagLabel = FINANCIAL_TAGS.find(f => f.id === c.financial_tag)?.label || c.financial_tag || '';
         return [
-            c.crn || '', c.customer_name || '', c.phone || '', c.email || '',
-            c.location || '', c.company_branch || '', c.capacity_kwp || '',
-            c.project_type || '', c.poc || '',
+            c.crn || '', c.customer_name || '', c.phone_number || '', c.email_address || '',
+            c.location || '', c.company_branch || '', c.system_capacity_kwp || '',
+            c.project_type || '', c.dealer || '',
             PRIMARY_STAGES.find(s => s.id === c.stage)?.label || c.stage || '',
-            tagLabel, c.quoted_amount || '', c.quote_to_bank || '',
-            c.receivables || '', c.discount || '',
             c.payment_type || '', c.bank_name || '', c.bank_account_number || '',
             c.ifsc_code || '', c.loan_application_number || '', c.meter_category || '',
             c.eb_number || '', c.dtr_code || '', c.sanctioned_load || '',
@@ -70,7 +66,7 @@ export function exportAllToCSV(customers) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `solarflow_customers_${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `watersun_customers_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
 }
