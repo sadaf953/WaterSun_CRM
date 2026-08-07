@@ -10,10 +10,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabase';
-import { logActivity, useMetadata, exportAllToCSV } from '../utils';
+import { logActivity, exportAllToCSV } from '../utils';
 import { PRIMARY_STAGES } from '../constants';
 
 import DashboardView from './DashboardView';
+import SubsidyView from './SubsidyView';
 import CustomerCard from './CustomerCard';
 import CustomerDetailModal from './CustomerDetailModal';
 import AddLeadModal from './AddLeadModal';
@@ -21,10 +22,11 @@ import ActivityLogView from './ActivityLogView';
 import UserManagementView from './UserManagementView';
 import TrashView from './TrashView';
 import AgentForm from './agentform';
+import ChannelPartnerManagementView from './ChannelPartnerManagementView';
 
 import {
     LayoutDashboard, Activity, UserCog, Menu, X,
-    Search, Plus, Download, LogOut, Sun, Trash2, Users,
+    Search, Plus, Download, LogOut, Sun, Trash2, Users, Tag,
 } from 'lucide-react';
 
 export default function Dashboard({ user, onLogout }) {
@@ -33,10 +35,10 @@ export default function Dashboard({ user, onLogout }) {
     const [currentView, setCurrentView] = useState('dashboard');
     const [selectedStage, setSelectedStage] = useState('Leads');
     const [stageSearch, setStageSearch] = useState('');    // per-stage search
-    const [dealerFilterInput, setDealerFilterInput] = useState('');  // typed dealer name (not yet applied)
-    const [dealerFilter, setDealerFilter] = useState('');    // applied dealer filter
-    const [showDealerDrop, setShowDealerDrop] = useState(false);
-    const dealerFilterRef = useRef(null);
+    const [channelPartnerFilterInput, setChannelPartnerFilterInput] = useState('');  // typed channel partner name (not yet applied)
+    const [channelPartnerFilter, setChannelPartnerFilter] = useState('');    // applied channel partner filter
+    const [showChannelPartnerDrop, setShowChannelPartnerDrop] = useState(false);
+    const channelPartnerFilterRef = useRef(null);
     const [globalSearch, setGlobalSearch] = useState('');    // global search
     const [globalResults, setGlobalResults] = useState([]);
     const [showGlobalDrop, setShowGlobalDrop] = useState(false);
@@ -44,15 +46,30 @@ export default function Dashboard({ user, onLogout }) {
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [showAddLead, setShowAddLead] = useState(false);
     const globalSearchRef = useRef(null);
-    const meta = useMetadata();
+    const [meta, setMeta] = useState({});
 
     // ── Data fetching ──────────────────────────────────────────────────────────
     const fetchData = async () => {
         setLoading(true);
+        // Load customers
         const { data, error } = await supabase
             .from('admin').select('*').order('created_at', { ascending: false });
         if (!error) setCustomers(data || []);
         else console.error('Fetch error:', error);
+
+        // Load metadata
+        const { data: metaData, error: metaErr } = await supabase
+            .from('metadata').select('category, label');
+        if (!metaErr && metaData) {
+            const grouped = {};
+            metaData.forEach(({ category, label }) => {
+                if (!grouped[category]) grouped[category] = [];
+                grouped[category].push(label);
+            });
+            setMeta(grouped);
+        } else {
+            console.error('Metadata fetch error:', metaErr);
+        }
         setLoading(false);
     };
 
@@ -82,8 +99,8 @@ export default function Dashboard({ user, onLogout }) {
             if (globalSearchRef.current && !globalSearchRef.current.contains(e.target)) {
                 setShowGlobalDrop(false);
             }
-            if (dealerFilterRef.current && !dealerFilterRef.current.contains(e.target)) {
-                setShowDealerDrop(false);
+            if (channelPartnerFilterRef.current && !channelPartnerFilterRef.current.contains(e.target)) {
+                setShowChannelPartnerDrop(false);
             }
         };
         document.addEventListener('mousedown', handler);
@@ -95,12 +112,12 @@ export default function Dashboard({ user, onLogout }) {
         const q = globalSearch.trim().toLowerCase();
         if (!q) { setGlobalResults([]); setShowGlobalDrop(false); return; }
         const activeNow = customers.filter(c => !c.deleted_at);
-        const dealerMatched = dealerFilter
-            ? activeNow.filter(c => c.dealer?.toLowerCase() === dealerFilter.toLowerCase())
+        const channelPartnerMatched = channelPartnerFilter
+            ? activeNow.filter(c => c.channel_partner?.toLowerCase() === channelPartnerFilter.toLowerCase())
             : activeNow;
         const authorized = user.userType === 'admin'
-            ? dealerMatched
-            : dealerMatched.filter(c => c.dealer === user.name);
+            ? channelPartnerMatched
+            : channelPartnerMatched.filter(c => c.channel_partner === user.name);
         const results = authorized.filter(c =>
             c.customer_name?.toLowerCase().includes(q) ||
             c.phone_number?.includes(globalSearch.trim()) ||
@@ -108,7 +125,7 @@ export default function Dashboard({ user, onLogout }) {
         ).slice(0, 8);
         setGlobalResults(results);
         setShowGlobalDrop(results.length > 0);
-    }, [globalSearch, customers, dealerFilter]);
+    }, [globalSearch, customers, channelPartnerFilter]);
 
     const handleGlobalSelect = (customer) => {
         // Navigate to the customer's stage so context is clear
@@ -122,11 +139,49 @@ export default function Dashboard({ user, onLogout }) {
     };
 
     // ── CRUD ──────────────────────────────────────────────────────────────────
+    const syncMetadata = async (data) => {
+        try {
+            if (data.channel_partner) {
+                const partner = data.channel_partner.trim();
+                if (partner) {
+                    const { data: existing } = await supabase
+                        .from('metadata')
+                        .select('id')
+                        .eq('category', 'channel_partner')
+                        .eq('label', partner);
+                    if (!existing || existing.length === 0) {
+                        await supabase
+                            .from('metadata')
+                            .insert({ category: 'channel_partner', label: partner });
+                    }
+                }
+            }
+            if (data.module_brand) {
+                const brand = data.module_brand.trim();
+                if (brand) {
+                    const { data: existing } = await supabase
+                        .from('metadata')
+                        .select('id')
+                        .eq('category', 'module_brand')
+                        .eq('label', brand);
+                    if (!existing || existing.length === 0) {
+                        await supabase
+                            .from('metadata')
+                            .insert({ category: 'module_brand', label: brand });
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Metadata sync background error:', e);
+        }
+    };
+
     const handleUpdateCustomer = async (id, updates) => {
         const { error } = await supabase.from('admin').update(updates).eq('id', id);
         if (!error) {
             setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
             if (selectedCustomer?.id === id) setSelectedCustomer(prev => ({ ...prev, ...updates }));
+            syncMetadata(updates);
         } else {
             console.error('Error updating customer:', error);
             alert('Database Save Error: ' + error.message + '\nDetails: ' + error.details);
@@ -228,6 +283,7 @@ export default function Dashboard({ user, onLogout }) {
             logActivity(user.id, 'create', `Added new lead: ${data.customer_name}`, `Done by: ${user.name}`);
             setShowAddLead(false);
             fetchData();
+            syncMetadata(insertData);
         }
     };
 
@@ -238,26 +294,27 @@ export default function Dashboard({ user, onLogout }) {
     // up for every role right now. Revisit this once poc-matching is sorted.
     const isAuthorized = (c) => true;
 
-    // Distinct Dealer names across all active leads, for the typeahead dropdown
-    const uniqueDealers = [...new Set(active.map(c => c.dealer).filter(Boolean))].sort();
-    const dealerSuggestions = dealerFilterInput.trim()
-        ? uniqueDealers.filter(p => p.toLowerCase().includes(dealerFilterInput.trim().toLowerCase()))
-        : uniqueDealers;
+    // Distinct Channel Partner names from metadata table for dropdowns and top filter suggestions
+    const uniqueChannelPartners = [...new Set(meta['channel_partner'] || [])].sort();
+    const channelPartnerSuggestions = channelPartnerFilterInput.trim()
+        ? uniqueChannelPartners.filter(p => p.toLowerCase().includes(channelPartnerFilterInput.trim().toLowerCase()))
+        : uniqueChannelPartners;
 
-    const matchesDealerFilter = (c) => !dealerFilter || c.dealer?.toLowerCase() === dealerFilter.toLowerCase();
+    const matchesChannelPartnerFilter = (c) => !channelPartnerFilter || c.channel_partner?.toLowerCase() === channelPartnerFilter.toLowerCase();
 
     // Everything downstream — stage counts, the stages grid, dashboard stats
-    // is built from this one dealer-scoped list
-    const dealerScoped = active.filter(c => matchesDealerFilter(c) && isAuthorized(c));
+    // is built from this one channel partner-scoped list
+    const channelPartnerScoped = active.filter(c => matchesChannelPartnerFilter(c) && isAuthorized(c));
+    const subsidyTagCount = channelPartnerScoped.filter(c => c.subsidy_tag).length;
 
     const stageCounts = PRIMARY_STAGES.reduce((acc, s) => {
-        acc[s.id] = dealerScoped.filter(c => c.stage === s.id).length;
+        acc[s.id] = channelPartnerScoped.filter(c => c.stage === s.id).length;
         return acc;
     }, {});
     const trashCount = trashed.length;
 
-    // Per-stage filtered cards — now respects the dealer filter too
-    const filtered = dealerScoped.filter(c => {
+    // Per-stage filtered cards — now respects the channel partner filter too
+    const filtered = channelPartnerScoped.filter(c => {
         const q = stageSearch.toLowerCase();
         const matchesSearch = !stageSearch ||
             c.customer_name?.toLowerCase().includes(q) ||
@@ -277,6 +334,7 @@ export default function Dashboard({ user, onLogout }) {
                     if (view === 'stages') { setCurrentView('stages'); setSelectedStage(stage); }
                     else setCurrentView(view);
                     setSidebarOpen(false);
+                    fetchData();
                 }}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold mb-0.5 transition-colors ${isActive ? 'bg-stone-900 text-white' : 'text-stone-600 hover:bg-stone-100'}`}>
                 <Icon className="w-4 h-4 flex-shrink-0" />
@@ -295,10 +353,12 @@ export default function Dashboard({ user, onLogout }) {
 
     const headerTitle =
         currentView === 'dashboard' ? 'Business Dashboard'
-            : currentView === 'activity' ? 'Activity Log'
-                : currentView === 'users' ? 'User Management'
-                    : currentView === 'trash' ? 'Trash'
-                        : PRIMARY_STAGES.find(s => s.id === selectedStage)?.label || selectedStage;
+            : currentView === 'subsidy' ? 'Subsidy Tag Tracking'
+                : currentView === 'channel_partner_mgmt' ? 'Channel Partner & Brand Management'
+                    : currentView === 'activity' ? 'Activity Log'
+                        : currentView === 'users' ? 'User Management'
+                            : currentView === 'trash' ? 'Trash'
+                            : PRIMARY_STAGES.find(s => s.id === selectedStage)?.label || selectedStage;
 
     return (
         <div className="min-h-screen bg-[#FCFBFA] flex">
@@ -321,6 +381,7 @@ export default function Dashboard({ user, onLogout }) {
 
                 <div className="flex-1 overflow-y-auto p-3">
                     <NavBtn view="dashboard" icon={LayoutDashboard} label="Dashboard" count={0} />
+                    <NavBtn view="subsidy" icon={Tag} label="Subsidy Tags" count={subsidyTagCount} />
 
 
 
@@ -334,6 +395,7 @@ export default function Dashboard({ user, onLogout }) {
                     {user.userType === 'admin' && (
                         <>
                             <div className="text-[9px] uppercase font-bold text-stone-300 px-3 pt-5 pb-2 tracking-widest">System</div>
+                            <NavBtn view="channel_partner_mgmt" icon={Users} label="Channel Partners" count={0} />
                             <NavBtn view="activity" icon={Activity} label="Activity Log" count={0} />
                             <NavBtn view="users" icon={UserCog} label="User Management" count={0} />
                             <NavBtn view="trash" icon={Trash2} label="Trash" count={trashCount} redBadge />
@@ -367,8 +429,8 @@ export default function Dashboard({ user, onLogout }) {
                         <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-stone-500"><Menu className="w-6 h-6" /></button>
                         <h2 className="font-bold text-stone-800">{headerTitle}</h2>
 
-                        {dealerFilter && (
-                            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">Dealer: {dealerFilter}</span>
+                        {channelPartnerFilter && (
+                            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">Channel Partner: {channelPartnerFilter}</span>
                         )}
                     </div>
 
@@ -413,31 +475,31 @@ export default function Dashboard({ user, onLogout }) {
                             </div>
                         )}
 
-                        {/* Dealer filter — applies everywhere: dashboard stats, and every stage */}
-                        <div className="relative hidden lg:flex items-center gap-1.5" ref={dealerFilterRef}>
+                        {/* Channel Partner filter — applies everywhere: dashboard stats, and every stage */}
+                        <div className="relative hidden lg:flex items-center gap-1.5" ref={channelPartnerFilterRef}>
                             <input
                                 type="text"
-                                placeholder="Dealer name..."
-                                value={dealerFilterInput}
-                                onChange={e => { setDealerFilterInput(e.target.value); setShowDealerDrop(true); }}
-                                onFocus={() => setShowDealerDrop(true)}
-                                onKeyDown={e => e.key === 'Enter' && (setDealerFilter(dealerFilterInput.trim()), setShowDealerDrop(false))}
+                                placeholder="Channel Partner..."
+                                value={channelPartnerFilterInput}
+                                onChange={e => { setChannelPartnerFilterInput(e.target.value); setShowChannelPartnerDrop(true); }}
+                                onFocus={() => setShowChannelPartnerDrop(true)}
+                                onKeyDown={e => e.key === 'Enter' && (setChannelPartnerFilter(channelPartnerFilterInput.trim()), setShowChannelPartnerDrop(false))}
                                 className="px-3 py-2 bg-stone-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 w-32"
                             />
                             <button
                                 onClick={() => {
-                                    setDealerFilter(dealerFilterInput.trim());
-                                    setShowDealerDrop(false);
+                                    setChannelPartnerFilter(channelPartnerFilterInput.trim());
+                                    setShowChannelPartnerDrop(false);
                                 }}
                                 className="px-3 py-2 rounded-xl text-xs font-medium bg-stone-900 text-white hover:bg-stone-800 transition-colors">
                                 Apply
                             </button>
-                            {(dealerFilter || dealerFilterInput) && (
+                            {(channelPartnerFilter || channelPartnerFilterInput) && (
                                 <button
                                     onClick={() => {
-                                        setDealerFilter('');
-                                        setDealerFilterInput('');
-                                        setShowDealerDrop(false);
+                                        setChannelPartnerFilter('');
+                                        setChannelPartnerFilterInput('');
+                                        setShowChannelPartnerDrop(false);
                                     }}
                                     className="px-3 py-2 rounded-xl text-xs font-medium bg-stone-200 text-stone-700 hover:bg-stone-300 transition-colors">
                                     Clear
@@ -445,12 +507,12 @@ export default function Dashboard({ user, onLogout }) {
                             )}
 
                             {/* Typeahead suggestions */}
-                            {showDealerDrop && dealerSuggestions.length > 0 && (
+                            {showChannelPartnerDrop && channelPartnerSuggestions.length > 0 && (
                                 <div className="absolute top-full mt-1 left-0 w-32 bg-white rounded-xl shadow-xl border border-stone-100 py-1 z-50 overflow-hidden max-h-48 overflow-y-auto">
-                                    {dealerSuggestions.map(name => (
+                                    {channelPartnerSuggestions.map(name => (
                                         <button
                                             key={name}
-                                            onClick={() => { setDealerFilterInput(name); setShowDealerDrop(false); }}
+                                            onClick={() => { setChannelPartnerFilterInput(name); setShowChannelPartnerDrop(false); }}
                                             className="w-full px-3 py-1.5 text-left text-xs text-stone-700 hover:bg-amber-50 hover:text-amber-700 transition-colors truncate">
                                             {name}
                                         </button>
@@ -478,8 +540,10 @@ export default function Dashboard({ user, onLogout }) {
 
                 {/* View router */}
                 <div className="flex-1 p-4 lg:p-6">
-                    {currentView === 'dashboard' && <DashboardView customers={dealerScoped} loading={loading} />}
+                    {currentView === 'dashboard' && <DashboardView customers={channelPartnerScoped} loading={loading} />}
+                    {currentView === 'subsidy' && <SubsidyView customers={channelPartnerScoped} onSelectCustomer={setSelectedCustomer} />}
 
+                    {currentView === 'channel_partner_mgmt' && user.userType === 'admin' && <ChannelPartnerManagementView customers={customers} currentUser={user} />}
                     {currentView === 'activity' && user.userType === 'admin' && <ActivityLogView />}
                     {currentView === 'users' && user.userType === 'admin' && <UserManagementView currentUser={user} />}
 
@@ -508,8 +572,8 @@ export default function Dashboard({ user, onLogout }) {
                         ) : (
                             <div className="flex flex-col items-center justify-center h-64 text-stone-400">
                                 <Users className="w-12 h-12 mb-3 text-stone-200" />
-                                <p className="font-medium text-stone-500">{(stageSearch || dealerFilter) ? 'No matching results in this stage' : 'No customers in this stage'}</p>
-                                <p className="text-sm mt-1">{dealerFilter ? `No leads with Dealer "${dealerFilter}" here` : stageSearch ? 'Try the global search bar to find across all stages' : 'Move customers here or add a new lead'}</p>
+                                <p className="font-medium text-stone-500">{(stageSearch || channelPartnerFilter) ? 'No matching results in this stage' : 'No customers in this stage'}</p>
+                                <p className="text-sm mt-1">{channelPartnerFilter ? `No leads with Channel Partner "${channelPartnerFilter}" here` : stageSearch ? 'Try the global search bar to find across all stages' : 'Move customers here or add a new lead'}</p>
                             </div>
                         )
                     )}
@@ -525,10 +589,10 @@ export default function Dashboard({ user, onLogout }) {
                     onDelete={handleSoftDelete}
                     user={user}
                     meta={meta}
-                    dealers={uniqueDealers}
+                    channel_partners={uniqueChannelPartners}
                 />
             )}
-            {showAddLead && <AddLeadModal isOpen={showAddLead} onClose={() => setShowAddLead(false)} onSave={handleAddLead} meta={meta} dealers={uniqueDealers} />}
+            {showAddLead && <AddLeadModal isOpen={showAddLead} onClose={() => setShowAddLead(false)} onSave={handleAddLead} meta={meta} channel_partners={uniqueChannelPartners} user={user} />}
         </div>
     );
 }

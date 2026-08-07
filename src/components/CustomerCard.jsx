@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Zap, MapPin, User, Building2, Package, FolderOpen, ChevronDown, Lock, ShieldCheck, ArrowRight } from 'lucide-react';
-import { PRIMARY_STAGES } from '../constants';
+import { PRIMARY_STAGES, SUBSIDY_TAGS, SUBSIDY_TAG_COLORS } from '../constants';
 import { formatINRCompact } from '../utils';
 
 export default function CustomerCard({ customer, onSelect, onMoveStage, isAdmin }) {
@@ -43,6 +43,9 @@ export default function CustomerCard({ customer, onSelect, onMoveStage, isAdmin 
         return '';
     })();
 
+    const tagInfo   = SUBSIDY_TAGS.find(f => f.id === customer.subsidy_tag);
+    const tagColors = customer.subsidy_tag ? (SUBSIDY_TAG_COLORS[customer.subsidy_tag] || {}) : {};
+
     return (
         <div className={`rounded-2xl border shadow-sm hover:shadow-md transition-all border-l-4 group flex flex-col ${isFrozen ? 'bg-stone-50/80 border-stone-200 border-l-emerald-500 opacity-80' : 'bg-white border-stone-100 border-l-amber-400'}`}>
             {/* Clickable top section */}
@@ -51,9 +54,11 @@ export default function CustomerCard({ customer, onSelect, onMoveStage, isAdmin 
                     <h3 className="font-bold text-stone-800 group-hover:text-amber-600 transition-colors leading-tight">
                         {customer.customer_name}
                     </h3>
-                    {/* <span className="text-[9px] bg-stone-50 text-stone-400 px-2 py-1 rounded font-bold uppercase ml-2 whitespace-nowrap">
-                        {customer.crn || 'NO-CRN'}
-                    </span> */}
+                    {tagInfo && (
+                        <span className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ml-2 whitespace-nowrap border ${tagColors.bg} ${tagColors.text} ${tagColors.border}`}>
+                            {tagInfo.label}
+                        </span>
+                    )}
                 </div>
                 <div className="grid grid-cols-2 gap-y-1.5 mb-3">
                     <div className="flex items-center gap-1.5 text-xs text-stone-500 font-medium">
@@ -66,7 +71,7 @@ export default function CustomerCard({ customer, onSelect, onMoveStage, isAdmin 
                     </div>
                     <div className="flex items-center gap-1.5 text-xs text-stone-500 font-medium">
                         <User size={11} className="text-stone-300 flex-shrink-0" />
-                        <span className="truncate">{customer.dealer || 'No Dealer'}</span>
+                        <span className="truncate">{customer.channel_partner || 'No Channel Partner'}</span>
                     </div>
                     {customer.phone_number && (
                         <div className="flex items-center gap-1.5 text-xs text-stone-500 font-medium">

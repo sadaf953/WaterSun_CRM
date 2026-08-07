@@ -100,7 +100,7 @@ export default function AgentForm({ user, onLogout }) {
                 company_branch: form.company_branch,
                 system_capacity_kwp: form.capacity_kwp ? Number(form.capacity_kwp) : null,
                 project_type: form.project_type,
-                dealer: form.poc || user.name,
+                channel_partner: form.poc || user.name,
                 application_done_by: user.name,
                 stage: 'LEADS',
                 payments: [],

@@ -5,9 +5,9 @@ import { useState, useEffect, useRef } from 'react';
 import { X, Plus } from 'lucide-react';
 import { supabase } from '../supabase';
 import { DEFAULT_LEAD_FORM, DEFAULT_PROJECT_CHECKLIST } from '../models';
+import { logActivity } from '../utils';
 
-// Metadata select component that supports adding a new option dynamically
-function AddLeadMetaSelect({ label, field, value, onChange, category, options = [] }) {
+function AddLeadMetaSelect({ label, field, value, onChange, category, options = [], user }) {
     const [adding, setAdding] = useState(false);
     const [newVal, setNewVal] = useState('');
     const [localOptions, setLocalOptions] = useState(options);
@@ -20,11 +20,18 @@ function AddLeadMetaSelect({ label, field, value, onChange, category, options = 
         const trimmed = newVal.trim();
         if (!trimmed) return;
         // Persist to Supabase metadata table
-        await supabase.from('metadata').insert({ category, label: trimmed });
+        const { error } = await supabase.from('metadata').insert({ category, label: trimmed });
+        if (error) {
+            alert('Failed to save metadata: ' + error.message);
+            return;
+        }
         setLocalOptions(prev => [...prev, trimmed]);
         onChange(field, trimmed);
         setNewVal('');
         setAdding(false);
+        if (user) {
+            await logActivity(user.id, 'create', `Added new ${category}: "${trimmed}" (inline from Add Lead Form)`);
+        }
     };
 
     if (adding) {
@@ -52,19 +59,13 @@ function AddLeadMetaSelect({ label, field, value, onChange, category, options = 
                     <option value="">Select {label}</option>
                     {localOptions.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
-                {category === 'module_brand' && (
-                    <button type="button" onClick={() => setAdding(true)} title="Add new option"
-                        className="px-3 py-2 bg-stone-100 hover:bg-amber-50 hover:text-amber-600 text-stone-400 rounded-xl text-xs transition border border-stone-200 flex items-center justify-center">
-                        <Plus className="w-4 h-4" />
-                    </button>
-                )}
             </div>
         </div>
     );
 }
 
-// Autocomplete component for Dealer Name selector
-function DealerAutocomplete({ label, value, onChange, suggestions = [], required = false }) {
+// Autocomplete component for Channel Partner Name selector
+function ChannelPartnerAutocomplete({ label, value, onChange, suggestions = [], required = false, isAdmin = false }) {
     const [inputValue, setInputValue] = useState(value || '');
     const [showSuggestions, setShowSuggestions] = useState(false);
     const containerRef = useRef(null);
@@ -100,6 +101,26 @@ function DealerAutocomplete({ label, value, onChange, suggestions = [], required
         setShowSuggestions(true);
     };
 
+    if (!isAdmin) {
+        return (
+            <div className="w-full">
+                <label className="block text-[10px] font-bold text-stone-500 uppercase tracking-wider mb-1">
+                    {label} {required && <span className="text-red-500 font-bold">*</span>}
+                </label>
+                <select 
+                    value={inputValue || ''} 
+                    onChange={e => handleSelect(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:border-amber-400 outline-none transition font-semibold text-stone-700"
+                >
+                    <option value="">Select Channel Partner</option>
+                    {suggestions.map(s => (
+                        <option key={s} value={s}>{s}</option>
+                    ))}
+                </select>
+            </div>
+        );
+    }
+
     return (
         <div className="relative w-full" ref={containerRef}>
             <label className="block text-[10px] font-bold text-stone-500 uppercase tracking-wider mb-1">
@@ -133,7 +154,7 @@ function DealerAutocomplete({ label, value, onChange, suggestions = [], required
     );
 }
 
-export default function AddLeadModal({ isOpen, onClose, onSave, meta = {}, dealers = [] }) {
+export default function AddLeadModal({ isOpen, onClose, onSave, meta = {}, channel_partners = [], user }) {
     const [formData, setFormData] = useState({ ...DEFAULT_LEAD_FORM });
 
     useEffect(() => {
@@ -149,7 +170,7 @@ export default function AddLeadModal({ isOpen, onClose, onSave, meta = {}, deale
     const handleSave = () => {
         if (!formData.customer_name?.trim()) return alert('Customer Name is required');
         if (!formData.phone_number?.toString().trim()) return alert('Customer Phone Number is required');
-        if (!formData.dealer?.trim()) return alert('Dealer Name is required');
+        if (!formData.channel_partner?.trim()) return alert('Channel Partner Name is required');
         if (!formData.system_capacity_kwp) return alert('System Capacity is required');
 
         onSave({
@@ -164,11 +185,12 @@ export default function AddLeadModal({ isOpen, onClose, onSave, meta = {}, deale
         { label: 'Customer Name', field: 'customer_name', type: 'text', required: true },
         { label: 'Customer Phone Number', field: 'phone_number', type: 'number', required: true },
         { label: 'Email Address', field: 'email_address', type: 'text', required: false },
-        { label: 'Sub Dealer Name', field: 'sub_dealer', type: 'text', required: false },
-        { label: 'Dealer Name', field: 'dealer', type: 'text', required: true },
+        { label: 'Sub Channel Partner Name', field: 'sub_channel_partner', type: 'text', required: false },
+        { label: 'Channel Partner Name', field: 'channel_partner', type: 'text', required: true },
         { label: 'Consumer No', field: 'consumer_no', type: 'text', required: false },
         { label: 'System Capacity (kWp)', field: 'system_capacity_kwp', type: 'number', required: true },
         { label: 'System Brand', field: 'module_brand', type: 'select', category: 'module_brand', required: false },
+        { label: 'Module Wp', field: 'module_wp', type: 'number', required: false },
         { label: 'Village', field: 'villages', type: 'text', required: false },
         { label: 'Sub Division', field: 'sub_divisions', type: 'text', required: false },
         { label: 'File No', field: 'folder_no', type: 'text', required: false },
@@ -198,24 +220,26 @@ export default function AddLeadModal({ isOpen, onClose, onSave, meta = {}, deale
                                             onChange={handleChange}
                                             category={category}
                                             options={meta[category] || []}
+                                            user={user}
                                         />
                                     </div>
                                 );
                             }
 
-                            if (field === 'dealer') {
-                                return (
-                                    <div key={field}>
-                                        <DealerAutocomplete
-                                            label={label}
-                                            value={formData[field]}
-                                            onChange={(val) => handleChange(field, val)}
-                                            suggestions={dealers}
-                                            required={required}
-                                        />
-                                    </div>
-                                );
-                            }
+                             if (field === 'channel_partner') {
+                                 return (
+                                     <div key={field}>
+                                          <ChannelPartnerAutocomplete
+                                              label={label}
+                                              value={formData[field]}
+                                              onChange={(val) => handleChange(field, val)}
+                                              suggestions={channel_partners}
+                                              required={required}
+                                              isAdmin={user?.userType === 'admin'}
+                                          />
+                                     </div>
+                                 );
+                             }
 
                             return (
                                 <div key={field}>

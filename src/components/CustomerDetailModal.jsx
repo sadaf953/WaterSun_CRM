@@ -13,9 +13,9 @@ import { useState, useEffect, useRef } from 'react';
 import {
     X, Edit3, Trash2, Save, Send, AlertTriangle, CheckSquare,
     User, Zap, IndianRupee, Building2, FolderOpen, MapPin,
-    LayoutDashboard, History, Plus, ShieldCheck, Lock, Unlock, ClipboardList, Banknote,
+    LayoutDashboard, History, Plus, ShieldCheck, Lock, Unlock, ClipboardList, Banknote, Tag,
 } from 'lucide-react';
-import { PRIMARY_STAGES } from '../constants';
+import { PRIMARY_STAGES, SUBSIDY_TAGS, SUBSIDY_TAG_COLORS } from '../constants';
 import { normalizeChecklist } from '../models';
 import { logActivity, formatLogDate, formatINR, toIndianCommas, formatInputValue, parseIndianNumber } from '../utils';
 import { supabase } from '../supabase';
@@ -60,7 +60,7 @@ const getStageRemarkFromData = (stagesRemarksObj, stageName) => {
 
 // ─── MetaSelect: dropdown that lets the user type+add a new option ───────────
 // Adds the new value to the Supabase metadata table automatically.
-function MetaSelect({ label, field, value, onChange, category, options = [], isEditing }) {
+function MetaSelect({ label, field, value, onChange, category, options = [], isEditing, user }) {
     const [adding, setAdding] = useState(false);
     const [newVal, setNewVal] = useState('');
     const [localOptions, setLocalOptions] = useState(options);
@@ -71,11 +71,18 @@ function MetaSelect({ label, field, value, onChange, category, options = [], isE
         const trimmed = newVal.trim();
         if (!trimmed) return;
         // Persist to Supabase metadata table
-        await supabase.from('metadata').insert({ category, label: trimmed });
+        const { error } = await supabase.from('metadata').insert({ category, label: trimmed });
+        if (error) {
+            alert('Failed to save metadata: ' + error.message);
+            return;
+        }
         setLocalOptions(prev => [...prev, trimmed]);
         onChange(field, trimmed);
         setNewVal('');
         setAdding(false);
+        if (user) {
+            await logActivity(user.id, 'create', `Added new ${category}: "${trimmed}" (inline from Customer Details Modal)`);
+        }
     };
 
     if (!isEditing) {
@@ -133,8 +140,8 @@ function DetailItem({ label, value, isMoney = false, isEnergy = false }) {
     );
 }
 
-// Autocomplete component for Dealer Name selector inside editing view
-function DealerAutocomplete({ label, value, onChange, suggestions = [] }) {
+// Autocomplete component for Channel Partner Name selector inside editing view
+function ChannelPartnerAutocomplete({ label, value, onChange, suggestions = [], isAdmin = false }) {
     const [inputValue, setInputValue] = useState(value || '');
     const [showSuggestions, setShowSuggestions] = useState(false);
     const containerRef = useRef(null);
@@ -170,6 +177,21 @@ function DealerAutocomplete({ label, value, onChange, suggestions = [] }) {
         setShowSuggestions(true);
     };
 
+    if (!isAdmin) {
+        return (
+            <select
+                value={inputValue || ''}
+                onChange={e => handleSelect(e.target.value)}
+                className="w-full bg-white border border-stone-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-300 font-semibold text-stone-700"
+            >
+                <option value="">Select Channel Partner</option>
+                {suggestions.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                ))}
+            </select>
+        );
+    }
+
     return (
         <div className="relative w-full" ref={containerRef}>
             <input
@@ -198,18 +220,18 @@ function DealerAutocomplete({ label, value, onChange, suggestions = [] }) {
     );
 }
 
-function EditableDetailItem({ label, field, value, onChange, type = 'text', isMoney = false, isEnergy = false, isEditing, options, category, meta, dealers = [] }) {
+function EditableDetailItem({ label, field, value, onChange, type = 'text', isMoney = false, isEnergy = false, isEditing, options, category, meta, channel_partners = [], isAdmin = false, user }) {
     // Metadata-driven dropdown with add-new
     if (options && category) {
-        return <MetaSelect label={label} field={field} value={value} onChange={onChange} category={category} options={options} isEditing={isEditing} />;
+        return <MetaSelect label={label} field={field} value={value} onChange={onChange} category={category} options={options} isEditing={isEditing} user={user} />;
     }
     if (!isEditing) return <DetailItem label={label} value={value} isMoney={isMoney} isEnergy={isEnergy} />;
 
-    if (field === 'dealer') {
+    if (field === 'channel_partner') {
         return (
             <div className="bg-stone-50 p-3 rounded-xl">
                 <p className="text-[9px] text-stone-400 uppercase tracking-wide mb-1 font-bold">{label}</p>
-                <DealerAutocomplete label={label} value={value} onChange={(val) => onChange(field, val)} suggestions={dealers} />
+                <ChannelPartnerAutocomplete label={label} value={value} onChange={(val) => onChange(field, val)} suggestions={channel_partners} isAdmin={isAdmin} />
             </div>
         );
     }
@@ -278,15 +300,6 @@ function CheckboxRemarkItem({ label, field, remarkField, value, remarkValue, onC
                         {label}
                     </label>
                 </div>
-                {/* {!showInput && (
-                    <button
-                        type="button"
-                        onClick={() => setShowInput(true)}
-                        className="text-[10px] text-stone-400 hover:text-amber-600 font-bold uppercase transition-colors"
-                    >
-                        + Add Remark
-                    </button>
-                )} */}
             </div>
             {showInput && (
                 <div className="relative flex items-center gap-1.5 animate-in slide-in-from-top-1 duration-200 pl-6.5">
@@ -390,16 +403,16 @@ function PaymentsEditor({ payments = [], onChange, isEditing }) {
 }
 
 // ─── Subsidy status options ───────────────────────────────────────────────────
-const SUBSIDY_STATUS_OPTIONS = ['Pending', 'Submitted', 'Rejected', 'Return', 'Redeemed', 'Disbursed'];
+const SUBSIDY_STATUS_OPTIONS = ['Approved', 'Returned', 'Rejected', 'Redeemed', 'Received'];
 
 // ─── CustomerDetailModal ──────────────────────────────────────────────────────
-export default function CustomerDetailModal({ customer, onClose, onUpdate, onDelete, user, meta, dealers = [] }) {
+export default function CustomerDetailModal({ customer, onClose, onUpdate, onDelete, user, meta, channel_partners = [] }) {
     const [activeTab, setActiveTab] = useState(() => {
         const regStages = ['REGISTRATION', 'LOAN', 'MATERIAL PROCUREMENT', 'HOLD PROCUREMENT'];
         const checklistStages = [
             'MATERIAL DELIVERY', 'INSTALLATION STATUS', 'GEO TAG PHOTO',
-            'DISCOM SUBMISSION', 'METER INSTALLATION', 'SYSTEM COMMISSIONING',
-            'METER PROCESS', 'DISCOM INSPECTION', 'COMPLETED'
+            'DISCOM SUBMISSION', 'METER INSTALLATION', 'DISCOM INSPECTION',
+            'SUBSIDY STATUS', 'FINAL REVIEW', 'COMPLETED'
         ];
         if (regStages.includes(customer?.stage)) {
             return 'registration';
@@ -425,6 +438,11 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
     const [localChecklist, setLocalChecklist] = useState(normalizeChecklist(customer.project_checklist));
     const [checklistDirty, setChecklistDirty] = useState(false);
     const sections = [...new Set(localChecklist.map(item => item.section))];
+
+    const [draftStatus, setDraftStatus] = useState('Approved');
+    const [draftDate, setDraftDate] = useState('');
+    const [draftRemark, setDraftRemark] = useState('');
+    const [isAddingEntry, setIsAddingEntry] = useState(false);
 
     const ACTION_COLORS = {
         create: 'bg-emerald-100 text-emerald-700', update: 'bg-blue-100 text-blue-700',
@@ -508,6 +526,100 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
 
 
 
+    const handleToggleSubsidyTag = (tagId) => {
+        const newTag = editData.subsidy_tag === tagId ? null : tagId;
+        setEditData(prev => ({ ...prev, subsidy_tag: newTag }));
+        if (newTag) {
+            setDraftStatus(newTag);
+        }
+    };
+
+    const handleSaveSubsidyTag = async () => {
+        const newTag = editData.subsidy_tag;
+        const entryDate = new Date().toISOString().split('T')[0];
+        let updatedHistory = editData.subsidy_history || [];
+        
+        if (newTag) {
+            const newEntry = {
+                status: newTag,
+                date: entryDate,
+                remark: 'Status updated via tag selector',
+                created_at: new Date().toISOString()
+            };
+            updatedHistory = [...updatedHistory, newEntry];
+        }
+        
+        setEditData(prev => ({ 
+            ...prev, 
+            subsidy_history: updatedHistory,
+            subsidy_tag: newTag
+        }));
+        
+        await onUpdate(customer.id, {
+            subsidy_tag: newTag,
+            subsidy_history: updatedHistory
+        });
+        
+        const tagLabel = SUBSIDY_TAGS.find(t => t.id === newTag)?.label || newTag;
+        await logActivity(
+            user.id,
+            'update',
+            `${customer.customer_name}: Subsidy Tag saved to ${newTag ? tagLabel : 'None'} (logged to history)`,
+            customer.id
+        );
+        
+        fetchLogs();
+    };
+
+    const handleSaveStageRemark = async () => {
+        const currentRemark = getStageRemarkFromData(editData.stages_remarks, editData.stage);
+        const originalRemark = getStageRemarkFromData(customer.stages_remarks, editData.stage);
+        
+        if (currentRemark !== originalRemark) {
+            let prevObj = {};
+            if (typeof customer.stages_remarks === 'object' && customer.stages_remarks) {
+                prevObj = customer.stages_remarks;
+            } else if (typeof customer.stages_remarks === 'string') {
+                try {
+                    const parsed = JSON.parse(customer.stages_remarks);
+                    if (typeof parsed === 'object' && parsed) prevObj = parsed;
+                } catch (ex) { }
+            }
+            const updatedRemarks = {
+                ...prevObj,
+                [editData.stage]: currentRemark
+            };
+
+            // Append the remark update to internal_remarks
+            let updatedInternalRemarks = editData.internal_remarks || '';
+            const formattedTime = formatDateTime(new Date());
+            const appendText = `${editData.stage} (${formattedTime}): ${currentRemark.trim() || 'Remark cleared'}`;
+            updatedInternalRemarks = updatedInternalRemarks
+                ? `${updatedInternalRemarks}\n${appendText}`
+                : appendText;
+
+            setEditData(prev => ({
+                ...prev,
+                stages_remarks: updatedRemarks,
+                internal_remarks: updatedInternalRemarks
+            }));
+
+            await onUpdate(customer.id, { 
+                stages_remarks: updatedRemarks,
+                internal_remarks: updatedInternalRemarks
+            });
+            
+            setIsSaved(true);
+            await logActivity(
+                user.id,
+                'update',
+                `${customer.customer_name}: Stage remark update for ${editData.stage} - "${currentRemark}"`,
+                customer.id
+            );
+            fetchLogs();
+        }
+    };
+
     const handleChange = (field, val) => {
         setEditData(prev => ({ ...prev, [field]: val }));
     };
@@ -521,6 +633,10 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                 changeSummary.push(`${key.replace(/_/g, ' ').toUpperCase()}: ${customer[key] || 'None'} → ${updates[key] || 'None'}`);
             }
         });
+
+        if (updates.subsidy_history) {
+            updates.subsidy_history = updates.subsidy_history.map(({ isNew, ...rest }) => rest);
+        }
 
         // Compare subsidy_history
         const oldSubsidy = customer.subsidy_history || [];
@@ -656,10 +772,11 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                 {/* Tabs */}
                 <div className="flex bg-stone-900 px-6 gap-6 border-t border-white/5 flex-shrink-0">
                     {[
-                        { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-                        { id: 'registration', label: 'Registration', icon: ClipboardList },
-                        { id: 'checklist', label: 'Installation & Progress', icon: CheckSquare },
-                        { id: 'history', label: 'Notes & History', icon: History },
+                        { id: 'overview',     label: 'Overview',                icon: LayoutDashboard },
+                        { id: 'registration', label: 'Registration',            icon: ClipboardList },
+                        { id: 'checklist',    label: 'Installation & Progress', icon: CheckSquare },
+                        { id: 'subsidy',      label: 'Subsidy Tracking',        icon: Tag },
+                        { id: 'history',      label: 'Notes & History',         icon: History },
                     ].map(tab => (
                         <button key={tab.id} onClick={() => { setActiveTab(tab.id); setEditingSection(null); }}
                             className={`flex items-center gap-2 py-3 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 ${activeTab === tab.id ? 'text-amber-400 border-amber-400' : 'text-stone-500 border-transparent hover:text-stone-300'}`}>
@@ -692,7 +809,8 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                     )}
 
                     {activeTab !== 'history' && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                             {/* Stage select */}
                             <div className={`p-4 rounded-2xl border shadow-sm ${isCompleted ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-stone-100'}`}>
                                 <label className="text-[9px] text-stone-400 font-bold uppercase mb-2 block">Primary Stage</label>
@@ -705,20 +823,6 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                                     <select value={editData.stage} onChange={async (e) => {
                                         const newStage = e.target.value;
                                         const oldStage = editData.stage;
-
-                                        // Get old remark from stages_remarks mapping
-                                        const oldRemark = getStageRemarkFromData(editData.stages_remarks, oldStage);
-
-                                        // Append current remark to internal remarks if it exists
-                                        let updatedInternalRemarks = editData.internal_remarks || '';
-                                        if (oldRemark.trim()) {
-                                            const formattedTime = formatDateTime(new Date());
-                                            const appendText = `${oldStage} (${formattedTime}): ${oldRemark.trim()}`;
-                                            updatedInternalRemarks = updatedInternalRemarks
-                                                ? `${updatedInternalRemarks}\n${appendText}`
-                                                : appendText;
-                                        }
-
                                         let prevObj = {};
                                         if (typeof editData.stages_remarks === 'object' && editData.stages_remarks) {
                                             prevObj = editData.stages_remarks;
@@ -736,14 +840,12 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                                         setEditData(prev => ({
                                             ...prev,
                                             stage: newStage,
-                                            stages_remarks: updatedRemarks,
-                                            internal_remarks: updatedInternalRemarks
+                                            stages_remarks: updatedRemarks
                                         }));
 
                                         await onUpdate(customer.id, {
                                             stage: newStage,
-                                            stages_remarks: updatedRemarks,
-                                            internal_remarks: updatedInternalRemarks
+                                            stages_remarks: updatedRemarks
                                         });
 
                                         await logActivity(user.id, 'stage_change', `${customer.customer_name}: STAGE: ${oldStage} → ${newStage}`, customer.id);
@@ -781,67 +883,11 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                                                         };
                                                     });
                                                 }}
-                                                onKeyDown={async (e) => {
-                                                    if (e.key === 'Enter') {
-                                                        const currentRemark = getStageRemarkFromData(editData.stages_remarks, editData.stage);
-                                                        const originalRemark = getStageRemarkFromData(customer.stages_remarks, editData.stage);
-                                                        if (currentRemark !== originalRemark) {
-                                                            let prevObj = {};
-                                                            if (typeof customer.stages_remarks === 'object' && customer.stages_remarks) {
-                                                                prevObj = customer.stages_remarks;
-                                                            } else if (typeof customer.stages_remarks === 'string') {
-                                                                try {
-                                                                    const parsed = JSON.parse(customer.stages_remarks);
-                                                                    if (typeof parsed === 'object' && parsed) prevObj = parsed;
-                                                                } catch (ex) { }
-                                                            }
-                                                            const updatedRemarks = {
-                                                                ...prevObj,
-                                                                [editData.stage]: currentRemark
-                                                            };
-                                                            await onUpdate(customer.id, { stages_remarks: updatedRemarks });
-                                                            setIsSaved(true);
-                                                            await logActivity(
-                                                                user.id,
-                                                                'update',
-                                                                `${customer.customer_name}: Stage remark update for ${editData.stage} - "${currentRemark}"`,
-                                                                customer.id
-                                                            );
-                                                            fetchLogs();
-                                                        }
-                                                    }
-                                                }}
+                                                onKeyDown={(e) => e.key === 'Enter' && handleSaveStageRemark()}
                                                 className="flex-1 bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-amber-300"
                                             />
                                             <button
-                                                onClick={async () => {
-                                                    const currentRemark = getStageRemarkFromData(editData.stages_remarks, editData.stage);
-                                                    const originalRemark = getStageRemarkFromData(customer.stages_remarks, editData.stage);
-                                                    if (currentRemark !== originalRemark) {
-                                                        let prevObj = {};
-                                                        if (typeof customer.stages_remarks === 'object' && customer.stages_remarks) {
-                                                            prevObj = customer.stages_remarks;
-                                                        } else if (typeof customer.stages_remarks === 'string') {
-                                                            try {
-                                                                const parsed = JSON.parse(customer.stages_remarks);
-                                                                if (typeof parsed === 'object' && parsed) prevObj = parsed;
-                                                            } catch (ex) { }
-                                                        }
-                                                        const updatedRemarks = {
-                                                            ...prevObj,
-                                                            [editData.stage]: currentRemark
-                                                        };
-                                                        await onUpdate(customer.id, { stages_remarks: updatedRemarks });
-                                                        setIsSaved(true);
-                                                        await logActivity(
-                                                            user.id,
-                                                            'update',
-                                                            `${customer.customer_name}: Stage remark update for ${editData.stage} - "${currentRemark}"`,
-                                                            customer.id
-                                                        );
-                                                        fetchLogs();
-                                                    }
-                                                }}
+                                                onClick={handleSaveStageRemark}
                                                 disabled={isSaved}
                                                 className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${isSaved ? 'bg-emerald-600 text-white cursor-default' : 'bg-stone-900 text-white hover:bg-stone-800'}`}
                                             >
@@ -852,6 +898,7 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                                 </div>
                             </div>
                         </div>
+                        </>
                     )}
 
                     {/* ── OVERVIEW ── */}
@@ -867,11 +914,12 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                                     <EditableDetailItem label="Email Address" field="email" value={editData.email} onChange={handleChange} isEditing={editingSection === 'cus'} />
                                     <EditableDetailItem label="Villages" field="villages" value={editData.villages} onChange={handleChange} isEditing={editingSection === 'cus'} />
                                     <EditableDetailItem label="Folder No" field="folder_no" value={editData.folder_no} onChange={handleChange} isEditing={editingSection === 'cus'} />
-                                    <EditableDetailItem label="Dealer Name" field="dealer" value={editData.dealer} onChange={handleChange} isEditing={editingSection === 'cus'} dealers={dealers} />
-                                    <EditableDetailItem label="Sub Dealer Name" field="sub_dealer_name" value={editData.sub_dealer_name} onChange={handleChange} isEditing={editingSection === 'cus'} />
+                                    <EditableDetailItem label="Channel Partner Name" field="channel_partner" value={editData.channel_partner} onChange={handleChange} isEditing={editingSection === 'cus'} channel_partners={channel_partners} isAdmin={isAdmin} />
+                                    <EditableDetailItem label="Sub Channel Partner Name" field="sub_channel_partner" value={editData.sub_channel_partner} onChange={handleChange} isEditing={editingSection === 'cus'} />
                                     <EditableDetailItem label="System Capacity (kWp)" field="system_capacity_kwp" value={editData.system_capacity_kwp} onChange={handleChange} isEditing={editingSection === 'cus'} />
-                                    <EditableDetailItem label="MODULE BRAND" field="module_brand" value={editData.module_brand} onChange={handleChange} options={meta['module_brand']} category="module_brand" isEditing={editingSection === 'cus'} />
-                                    <EditableDetailItem label="PAYMENT TYPE" field="payment_type" value={editData.payment_type} onChange={handleChange} options={meta['payment_type']} category="payment_type" isEditing={editingSection === 'cus'} />
+                                    <EditableDetailItem label="MODULE BRAND" field="module_brand" value={editData.module_brand} onChange={handleChange} options={meta['module_brand']} category="module_brand" isEditing={editingSection === 'cus'} user={user} />
+                                    <EditableDetailItem label="MODULE WP" field="module_wp" value={editData.module_wp} onChange={handleChange} type="number" isEditing={editingSection === 'cus'} />
+                                    <EditableDetailItem label="PAYMENT TYPE" field="payment_type" value={editData.payment_type} onChange={handleChange} options={meta['payment_type']} category="payment_type" isEditing={editingSection === 'cus'} user={user} />
                                     <EditableDetailItem label="Sub Division" field="sub_divisions" value={editData.sub_divisions} onChange={handleChange} isEditing={editingSection === 'cus'} />
                                     <EditableDetailItem label="Consumer No" field="consumer_no" value={editData.consumer_no} onChange={handleChange} isEditing={editingSection === 'cus'} />
 
@@ -926,20 +974,6 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                                 </div>
                             </section>
 
-                            {/* Loan */}
-                            {editData.payment_type?.trim().toLowerCase() !== 'cash' && (
-                                <section id="section-sub">
-                                    <SectionHeader title="Loan & Subsidy Status" id="sub" icon={Banknote} />
-                                    <HistoryEntryEditor
-                                        entries={editData.subsidy_history || []}
-                                        onChange={val => handleChange('subsidy_history', val)}
-                                        isEditing={editingSection === 'sub'}
-                                        statusOptions={SUBSIDY_STATUS_OPTIONS}
-                                        title="Subsidy Entry"
-                                        emptyText="No subsidy history recorded"
-                                    />
-                                </section>
-                            )}
                         </div>
                     )}
 
@@ -1024,6 +1058,187 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                             </div>
                         );
                     })()}
+
+                    {/* ── SUBSIDY ── */}
+                    {activeTab === 'subsidy' && (
+                        <div className="space-y-4 animate-in fade-in duration-300">
+                            {/* Subsidy Tag Selector */}
+                            <section className="bg-white p-6 rounded-[24px] border border-stone-100 shadow-sm space-y-4">
+                                <div className="flex items-center justify-between border-b border-stone-100 pb-2 mb-1">
+                                    <label className="text-[10px] text-stone-400 font-bold uppercase tracking-wider block">Subsidy Tag Tracking</label>
+                                    {!isFrozen && editData.subsidy_tag !== customer.subsidy_tag && (
+                                        <button
+                                            onClick={handleSaveSubsidyTag}
+                                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-lg text-[10px] font-bold transition-all shadow-md shadow-emerald-600/10"
+                                        >
+                                            Save Tag
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 w-full">
+                                    {SUBSIDY_TAGS.map(tag => {
+                                        const isSelected = editData.subsidy_tag === tag.id;
+                                        const colors = SUBSIDY_TAG_COLORS[tag.id] || {};
+                                        return (
+                                            <button
+                                                key={tag.id}
+                                                disabled={isFrozen}
+                                                onClick={() => handleToggleSubsidyTag(tag.id)}
+                                                className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border flex items-center justify-center gap-1.5 w-full ${
+                                                    isSelected
+                                                        ? `${colors.bg} ${colors.text} ${colors.border} shadow-sm shadow-stone-900/5`
+                                                        : 'bg-stone-50 hover:bg-stone-100 border-stone-200 text-stone-600'
+                                                }`}
+                                            >
+                                                <span className={`w-2 h-2 rounded-full ${isSelected ? colors.dot : 'bg-stone-300'}`} />
+                                                {tag.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </section>
+
+                            {/* Subsidy History Timeline */}
+                            <section className="bg-white p-6 rounded-[24px] border border-stone-100 shadow-sm space-y-4">
+                                <div className="flex items-center gap-2 mb-2 border-b border-stone-100 pb-2">
+                                    <History size={16} className="text-stone-400" />
+                                    <h3 className="text-xs font-bold text-stone-700 uppercase tracking-widest">Subsidy Status Timeline</h3>
+                                </div>
+
+                                {/* Compact Timeline list */}
+                                {(!editData.subsidy_history || editData.subsidy_history.length === 0) ? (
+                                    <p className="text-xs text-stone-400 italic">No subsidy history recorded</p>
+                                ) : (
+                                    <div className="relative border-l border-stone-200 ml-3 pl-5 space-y-4">
+                                        {(editData.subsidy_history || []).map((e, idx) => {
+                                            const pillColors = {
+                                                Approved: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-400' },
+                                                Returned: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-400' },
+                                                Rejected: { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200', dot: 'bg-rose-400' },
+                                                Redeemed: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-400' },
+                                                Received: { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', dot: 'bg-indigo-400' },
+                                            };
+                                            const colors = pillColors[e.status] || { bg: 'bg-stone-50', text: 'text-stone-600', border: 'border-stone-200', dot: 'bg-stone-400' };
+                                            return (
+                                                <div key={idx} className="relative">
+                                                    <span className={`absolute -left-[25.5px] top-1.5 w-2 h-2 rounded-full ring-4 ring-white ${colors.dot}`} />
+                                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={`text-[9px] font-bold uppercase tracking-wide px-2 py-0.5 rounded border ${colors.bg} ${colors.text} ${colors.border}`}>
+                                                                {e.status}
+                                                            </span>
+                                                            {e.remark && <span className="text-xs text-stone-600 font-medium">{e.remark}</span>}
+                                                        </div>
+                                                        {e.date && <span className="text-[10px] text-stone-400 font-semibold">{e.date}</span>}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+
+                                {/* Add Subsidy Option */}
+                                {!isFrozen && (
+                                    <div className="pt-2">
+                                        {isAddingEntry ? (
+                                            <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200 space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <div>
+                                                        <label className="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">Status</label>
+                                                        <select
+                                                            value={draftStatus}
+                                                            onChange={e => setDraftStatus(e.target.value)}
+                                                            className="w-full bg-white border border-stone-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-amber-400"
+                                                        >
+                                                            {SUBSIDY_STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">Date</label>
+                                                        <input
+                                                            type="date"
+                                                            value={draftDate}
+                                                            onChange={e => setDraftDate(e.target.value)}
+                                                            className="w-full bg-white border border-stone-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-amber-400"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label className="text-[9px] font-bold text-stone-400 uppercase tracking-wider block mb-1">Remark</label>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Remark details..."
+                                                        value={draftRemark}
+                                                        onChange={e => setDraftRemark(e.target.value)}
+                                                        className="w-full bg-white border border-stone-200 rounded-xl px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-amber-400"
+                                                    />
+                                                </div>
+                                                <div className="flex justify-end gap-2 pt-1.5">
+                                                    <button
+                                                        onClick={() => {
+                                                            setIsAddingEntry(false);
+                                                            setDraftRemark('');
+                                                            setDraftDate('');
+                                                        }}
+                                                        className="px-3.5 py-1.5 rounded-lg text-[10px] font-bold bg-stone-200 hover:bg-stone-300 text-stone-600 transition-colors"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                    <button
+                                                        onClick={async () => {
+                                                            const entryDate = draftDate || new Date().toISOString().split('T')[0];
+                                                            const newEntry = {
+                                                                status: draftStatus,
+                                                                date: entryDate,
+                                                                remark: draftRemark,
+                                                                created_at: new Date().toISOString()
+                                                            };
+                                                            const updatedHistory = [...(editData.subsidy_history || []), newEntry];
+                                                            
+                                                            setEditData(prev => ({ 
+                                                                ...prev, 
+                                                                subsidy_history: updatedHistory,
+                                                                subsidy_tag: draftStatus
+                                                            }));
+                                                            await onUpdate(customer.id, { 
+                                                                subsidy_history: updatedHistory,
+                                                                subsidy_tag: draftStatus
+                                                            });
+                                                            
+                                                            await logActivity(
+                                                                user.id,
+                                                                'update',
+                                                                `${customer.customer_name}: Added subsidy entry (${draftStatus} on ${entryDate}${draftRemark ? `: ${draftRemark}` : ''})`,
+                                                                customer.id
+                                                            );
+                                                            
+                                                            setIsAddingEntry(false);
+                                                            setDraftRemark('');
+                                                            setDraftDate('');
+                                                            fetchLogs();
+                                                        }}
+                                                        className="px-3.5 py-1.5 rounded-lg text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/10 transition-colors"
+                                                    >
+                                                        Add Entry
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <button
+                                                onClick={() => {
+                                                    setDraftStatus(SUBSIDY_STATUS_OPTIONS[0]);
+                                                    setIsAddingEntry(true);
+                                                }}
+                                                className="w-full flex items-center justify-center gap-1.5 border border-dashed border-stone-300 rounded-xl py-2.5 text-xs font-bold text-stone-500 hover:border-amber-400 hover:text-amber-600 hover:bg-amber-50/10 transition-all"
+                                            >
+                                                <Plus className="w-3.5 h-3.5" /> Add Subsidy Entry
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </section>
+                        </div>
+                    )}
 
                     {/* ── NOTES & HISTORY ── */}
                     {activeTab === 'history' && (

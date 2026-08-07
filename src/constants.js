@@ -5,6 +5,7 @@
 import {
     Users, ClipboardList, IndianRupee, Package, PauseCircle, Truck,
     Wrench, Camera, Send, Gauge, Zap, Activity, ClipboardCheck, CheckCircle2,
+    Clock, AlertTriangle, Banknote, Tag,
 } from 'lucide-react';
 
 export const PRIMARY_STAGES = [
@@ -18,13 +19,27 @@ export const PRIMARY_STAGES = [
     { id: 'GEO TAG PHOTO', label: 'Geo Tag Photo', icon: Camera },
     { id: 'DISCOM SUBMISSION', label: 'Discom Submission', icon: Send },
     { id: 'METER INSTALLATION', label: 'Meter Installation', icon: Gauge },
-    { id: 'SYSTEM COMMISSIONING', label: 'System Commissioning', icon: Zap },
-    { id: 'METER PROCESS', label: 'Meter Process', icon: Activity },
     { id: 'DISCOM INSPECTION', label: 'Discom Inspection', icon: ClipboardCheck },
+    { id: 'SUBSIDY STATUS', label: 'Subsidy Status', icon: Tag },
+    { id: 'FINAL REVIEW', label: 'Final Review', icon: ClipboardCheck },
     { id: 'COMPLETED', label: 'Completed', icon: CheckCircle2 },
 ];
 
+export const SUBSIDY_TAGS = [
+    { id: 'Approved', label: 'Approved', icon: CheckCircle2 },
+    { id: 'Returned', label: 'Returned', icon: Clock },
+    { id: 'Rejected', label: 'Rejected', icon: AlertTriangle },
+    { id: 'Redeemed', label: 'Redeemed', icon: Banknote },
+    { id: 'Received', label: 'Received', icon: CheckCircle2 },
+];
 
+export const SUBSIDY_TAG_COLORS = {
+    'Approved': { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-400' },
+    'Returned': { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-400' },
+    'Rejected': { bg: 'bg-rose-50',    text: 'text-rose-700',    border: 'border-rose-200',    dot: 'bg-rose-400' },
+    'Redeemed': { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200',    dot: 'bg-blue-400' },
+    'Received': { bg: 'bg-indigo-50',  text: 'text-indigo-700',  border: 'border-indigo-200',  dot: 'bg-indigo-400' },
+};
 
 // Supabase metadata table categories (one per managed dropdown)
 export const META_CATEGORIES = ['payment_type', 'module_brand', 'customer_type', 'payment_method_modes', 'subsidy_approval_status'];

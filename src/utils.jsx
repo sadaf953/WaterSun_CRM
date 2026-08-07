@@ -3,7 +3,7 @@
 // ──────────────────────────────────────────────────────────────────────────────
 
 import { supabase } from './supabase';
-import { PRIMARY_STAGES } from './constants';
+import { PRIMARY_STAGES, SUBSIDY_TAGS } from './constants';
 
 // ─── Activity Logging ─────────────────────────────────────────────────────────
 export async function logActivity(userId, action, message, details = '') {
@@ -40,17 +40,18 @@ export function useMetadata() {
 export function exportAllToCSV(customers) {
     const headers = [
         'CRN', 'Customer Name', 'Phone', 'Email', 'Location', 'Branch',
-        'Capacity (kWp)', 'Project Type', 'POC', 'Stage',
+        'Capacity (kWp)', 'Project Type', 'Channel Partner', 'Stage',
         'Payment Type', 'Bank Name', 'Account #', 'IFSC', 'Loan Application #',
         'Meter Category', 'EB Number', 'DTR Code', 'Sanctioned Load',
         'DISCOM Division', 'Net Metering', 'Vendor', 'Aadhar',
-        'Application #', 'Application Date', 'Google Docs', 'Created At',
+        'Application #', 'Application Date', 'Google Docs', 'Subsidy Status', 'Created At',
     ];
     const rows = customers.map(c => {
+        const subsidyLabel = SUBSIDY_TAGS.find(f => f.id === c.subsidy_tag)?.label || c.subsidy_tag || '';
         return [
             c.crn || '', c.customer_name || '', c.phone_number || '', c.email_address || '',
             c.location || '', c.company_branch || '', c.system_capacity_kwp || '',
-            c.project_type || '', c.dealer || '',
+            c.project_type || '', c.channel_partner || '',
             PRIMARY_STAGES.find(s => s.id === c.stage)?.label || c.stage || '',
             c.payment_type || '', c.bank_name || '', c.bank_account_number || '',
             c.ifsc_code || '', c.loan_application_number || '', c.meter_category || '',
@@ -58,6 +59,7 @@ export function exportAllToCSV(customers) {
             c.discom_division || '', c.net_metering || '', c.vendor || '',
             c.aadhar || '', c.application_number || '', c.application_date || '',
             c.google_docs || '',
+            subsidyLabel,
             c.created_at ? new Date(c.created_at).toLocaleDateString('en-IN') : '',
         ].join(',');
     });

@@ -39,7 +39,7 @@ export default function HistoryEntryEditor({
 
     const addEntry = () => onChange([
         ...entries,
-        { status: statusOptions[0], date: '', remark: '', created_at: new Date().toISOString() },
+        { status: statusOptions[0], date: '', remark: '', created_at: new Date().toISOString(), isNew: true },
     ]);
 
     const removeEntry = (idx) => onChange(entries.filter((_, i) => i !== idx));
@@ -73,38 +73,46 @@ export default function HistoryEntryEditor({
     // ── EDIT view ──
     return (
         <div className="space-y-2">
-            {entries.map((e, i) => (
-                <div key={i} className="bg-stone-50 p-3 rounded-xl space-y-2 border border-stone-200">
-                    <div className="flex items-center justify-between">
-                        <p className="text-[9px] font-bold text-stone-400 uppercase">{title} {i + 1}</p>
-                        <button onClick={() => removeEntry(i)} className="text-red-400 hover:text-red-600">
-                            <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                        <select
-                            value={e.status || statusOptions[0]}
-                            onChange={ev => updateEntry(i, 'status', ev.target.value)}
-                            className="bg-white border border-stone-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-300"
-                        >
-                            {statusOptions.map(t => <option key={t}>{t}</option>)}
-                        </select>
+            {entries.map((e, idx) => {
+                const isPast = !e.isNew;
+                return (
+                    <div key={idx} className="bg-stone-50 p-3 rounded-xl space-y-2 border border-stone-200">
+                        <div className="flex items-center justify-between">
+                            <p className="text-[9px] font-bold text-stone-400 uppercase">{title} {idx + 1} {isPast && '(Saved)'}</p>
+                            {!isPast && (
+                                <button onClick={() => removeEntry(idx)} className="text-red-400 hover:text-red-600">
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            <select
+                                disabled={isPast}
+                                value={e.status || statusOptions[0]}
+                                onChange={ev => updateEntry(idx, 'status', ev.target.value)}
+                                className="bg-white border border-stone-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-300 disabled:opacity-75 disabled:bg-stone-100/80"
+                            >
+                                {statusOptions.map(t => <option key={t}>{t}</option>)}
+                            </select>
+                            <input
+                                type="date"
+                                disabled={isPast}
+                                value={e.date || ''}
+                                onChange={ev => updateEntry(idx, 'date', ev.target.value)}
+                                className="bg-white border border-stone-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-300 disabled:opacity-75 disabled:bg-stone-100/80"
+                            />
+                        </div>
                         <input
-                            type="date"
-                            value={e.date || ''}
-                            onChange={ev => updateEntry(i, 'date', ev.target.value)}
-                            className="bg-white border border-stone-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-300"
+                            type="text"
+                            disabled={isPast}
+                            placeholder="Remark..."
+                            value={e.remark || ''}
+                            onChange={ev => updateEntry(idx, 'remark', ev.target.value)}
+                            className="w-full bg-white border border-stone-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-300 disabled:opacity-75 disabled:bg-stone-100/80"
                         />
                     </div>
-                    <input
-                        type="text"
-                        placeholder="Remark..."
-                        value={e.remark || ''}
-                        onChange={ev => updateEntry(i, 'remark', ev.target.value)}
-                        className="w-full bg-white border border-stone-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-300"
-                    />
-                </div>
-            ))}
+                );
+            })}
             <button
                 onClick={addEntry}
                 className="w-full flex items-center justify-center gap-1.5 border border-dashed border-stone-300 rounded-xl py-2 text-xs text-stone-500 hover:border-amber-400 hover:text-amber-600 transition-colors"

@@ -6,7 +6,7 @@
 
 import { useState } from 'react';
 import { Trash2, RotateCcw, Eye, AlertTriangle, X } from 'lucide-react';
-import { PRIMARY_STAGES } from '../constants';
+import { PRIMARY_STAGES, SUBSIDY_TAGS } from '../constants';
 import { formatINR } from '../utils';
 
 function formatDate(d) {
@@ -15,6 +15,7 @@ function formatDate(d) {
 }
 
 function TrashDetailDrawer({ customer, onClose }) {
+    const tagInfo = SUBSIDY_TAGS.find(f => f.id === customer.subsidy_tag);
     return (
         <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-[28px] shadow-2xl w-full max-w-lg overflow-hidden border border-stone-100">
@@ -35,10 +36,11 @@ function TrashDetailDrawer({ customer, onClose }) {
                         ['Email',            customer.email_address],
                         ['Location',         customer.location],
                         ['Branch',           customer.company_branch],
-                        ['POC',              customer.dealer],
+                        ['Channel Partner',  customer.channel_partner],
                         ['Capacity',         customer.system_capacity_kwp ? `${customer.system_capacity_kwp} kWp` : null],
                         ['Project Type',     customer.project_type],
                         ['Stage at Deletion',PRIMARY_STAGES.find(s => s.id === customer.stage)?.label || customer.stage],
+                        ['Subsidy Status',   tagInfo?.label],
                     ].map(([label, val]) => val ? (
                         <div key={label} className="flex justify-between text-sm">
                             <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wide">{label}</span>
