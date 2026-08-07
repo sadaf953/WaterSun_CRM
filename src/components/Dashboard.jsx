@@ -160,10 +160,10 @@ export default function Dashboard({ user, onLogout }) {
         const customer = customers.find(c => c.id === id);
         if (!customer) return;
         const oldStage = customer.stage;
-        
+
         // Get old remark from stages_remarks mapping
         const oldRemark = (typeof customer.stages_remarks === 'object' && customer.stages_remarks ? customer.stages_remarks[oldStage] : '') || '';
-        
+
         let updatedInternalRemarks = customer.internal_remarks || '';
         if (oldRemark.trim()) {
             const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -177,7 +177,7 @@ export default function Dashboard({ user, onLogout }) {
             hours = hours ? hours : 12;
             const h = hours.toString().padStart(2, '0');
             const formattedTime = `${d} ${m}, ${h}:${minutes} ${ampm}`;
-            
+
             const appendText = `${oldStage} (${formattedTime}): ${oldRemark.trim()}`;
             updatedInternalRemarks = updatedInternalRemarks
                 ? `${updatedInternalRemarks}\n${appendText}`
@@ -204,7 +204,7 @@ export default function Dashboard({ user, onLogout }) {
 
     const handleAddLead = async (data) => {
         const leadData = { ...data, application_done_by: user.name, created_at: new Date().toISOString() };
-        
+
         // Clean up or format values
         if (leadData.system_capacity_kwp) {
             leadData.system_capacity_kwp = Number(leadData.system_capacity_kwp);
@@ -525,9 +525,10 @@ export default function Dashboard({ user, onLogout }) {
                     onDelete={handleSoftDelete}
                     user={user}
                     meta={meta}
+                    dealers={uniqueDealers}
                 />
             )}
-            {showAddLead && <AddLeadModal isOpen={showAddLead} onClose={() => setShowAddLead(false)} onSave={handleAddLead} meta={meta} />}
+            {showAddLead && <AddLeadModal isOpen={showAddLead} onClose={() => setShowAddLead(false)} onSave={handleAddLead} meta={meta} dealers={uniqueDealers} />}
         </div>
     );
 }

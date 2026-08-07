@@ -9,7 +9,7 @@
 //   • Stage/tag options: edit constants.js
 // ──────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
     X, Edit3, Trash2, Save, Send, AlertTriangle, CheckSquare,
     User, Zap, IndianRupee, Building2, FolderOpen, MapPin,
@@ -133,12 +133,87 @@ function DetailItem({ label, value, isMoney = false, isEnergy = false }) {
     );
 }
 
-function EditableDetailItem({ label, field, value, onChange, type = 'text', isMoney = false, isEnergy = false, isEditing, options, category, meta }) {
+// Autocomplete component for Dealer Name selector inside editing view
+function DealerAutocomplete({ label, value, onChange, suggestions = [] }) {
+    const [inputValue, setInputValue] = useState(value || '');
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const containerRef = useRef(null);
+
+    useEffect(() => {
+        setInputValue(value || '');
+    }, [value]);
+
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (containerRef.current && !containerRef.current.contains(e.target)) {
+                setShowSuggestions(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const filtered = inputValue.trim()
+        ? suggestions.filter(s => s.toLowerCase().includes(inputValue.trim().toLowerCase()))
+        : suggestions;
+
+    const handleSelect = (val) => {
+        setInputValue(val);
+        onChange(val);
+        setShowSuggestions(false);
+    };
+
+    const handleInputChange = (e) => {
+        const val = e.target.value;
+        setInputValue(val);
+        onChange(val);
+        setShowSuggestions(true);
+    };
+
+    return (
+        <div className="relative w-full" ref={containerRef}>
+            <input
+                type="text"
+                value={inputValue}
+                onChange={handleInputChange}
+                onFocus={() => setShowSuggestions(true)}
+                className="w-full bg-white border border-stone-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-300"
+                placeholder={label}
+            />
+            {showSuggestions && filtered.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-stone-100 rounded-lg shadow-xl z-50 max-h-40 overflow-y-auto py-1">
+                    {filtered.map(s => (
+                        <button
+                            key={s}
+                            type="button"
+                            onClick={() => handleSelect(s)}
+                            className="w-full text-left px-3 py-1.5 text-xs hover:bg-stone-50 text-stone-700 font-medium transition-colors"
+                        >
+                            {s}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function EditableDetailItem({ label, field, value, onChange, type = 'text', isMoney = false, isEnergy = false, isEditing, options, category, meta, dealers = [] }) {
     // Metadata-driven dropdown with add-new
     if (options && category) {
         return <MetaSelect label={label} field={field} value={value} onChange={onChange} category={category} options={options} isEditing={isEditing} />;
     }
     if (!isEditing) return <DetailItem label={label} value={value} isMoney={isMoney} isEnergy={isEnergy} />;
+
+    if (field === 'dealer') {
+        return (
+            <div className="bg-stone-50 p-3 rounded-xl">
+                <p className="text-[9px] text-stone-400 uppercase tracking-wide mb-1 font-bold">{label}</p>
+                <DealerAutocomplete label={label} value={value} onChange={(val) => onChange(field, val)} suggestions={dealers} />
+            </div>
+        );
+    }
+
     return (
         <div className="bg-stone-50 p-3 rounded-xl">
             <p className="text-[9px] text-stone-400 uppercase tracking-wide mb-1 font-bold">{label}</p>
@@ -318,7 +393,7 @@ function PaymentsEditor({ payments = [], onChange, isEditing }) {
 const SUBSIDY_STATUS_OPTIONS = ['Pending', 'Submitted', 'Rejected', 'Return', 'Redeemed', 'Disbursed'];
 
 // ─── CustomerDetailModal ──────────────────────────────────────────────────────
-export default function CustomerDetailModal({ customer, onClose, onUpdate, onDelete, user, meta }) {
+export default function CustomerDetailModal({ customer, onClose, onUpdate, onDelete, user, meta, dealers = [] }) {
     const [activeTab, setActiveTab] = useState(() => {
         const regStages = ['REGISTRATION', 'LOAN', 'MATERIAL PROCUREMENT', 'HOLD PROCUREMENT'];
         const checklistStages = [
@@ -792,7 +867,7 @@ export default function CustomerDetailModal({ customer, onClose, onUpdate, onDel
                                     <EditableDetailItem label="Email Address" field="email" value={editData.email} onChange={handleChange} isEditing={editingSection === 'cus'} />
                                     <EditableDetailItem label="Villages" field="villages" value={editData.villages} onChange={handleChange} isEditing={editingSection === 'cus'} />
                                     <EditableDetailItem label="Folder No" field="folder_no" value={editData.folder_no} onChange={handleChange} isEditing={editingSection === 'cus'} />
-                                    <EditableDetailItem label="Dealer Name" field="dealer" value={editData.dealer} onChange={handleChange} isEditing={editingSection === 'cus'} />
+                                    <EditableDetailItem label="Dealer Name" field="dealer" value={editData.dealer} onChange={handleChange} isEditing={editingSection === 'cus'} dealers={dealers} />
                                     <EditableDetailItem label="Sub Dealer Name" field="sub_dealer_name" value={editData.sub_dealer_name} onChange={handleChange} isEditing={editingSection === 'cus'} />
                                     <EditableDetailItem label="System Capacity (kWp)" field="system_capacity_kwp" value={editData.system_capacity_kwp} onChange={handleChange} isEditing={editingSection === 'cus'} />
                                     <EditableDetailItem label="MODULE BRAND" field="module_brand" value={editData.module_brand} onChange={handleChange} options={meta['module_brand']} category="module_brand" isEditing={editingSection === 'cus'} />

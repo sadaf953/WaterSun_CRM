@@ -1,7 +1,7 @@
 // src/components/AddLeadModal.jsx  —  Watersun Electrical Solutions Pvt Ltd
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X, Plus } from 'lucide-react';
 import { supabase } from '../supabase';
 import { DEFAULT_LEAD_FORM, DEFAULT_PROJECT_CHECKLIST } from '../models';
@@ -63,7 +63,77 @@ function AddLeadMetaSelect({ label, field, value, onChange, category, options = 
     );
 }
 
-export default function AddLeadModal({ isOpen, onClose, onSave, meta = {} }) {
+// Autocomplete component for Dealer Name selector
+function DealerAutocomplete({ label, value, onChange, suggestions = [], required = false }) {
+    const [inputValue, setInputValue] = useState(value || '');
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const containerRef = useRef(null);
+
+    useEffect(() => {
+        setInputValue(value || '');
+    }, [value]);
+
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (containerRef.current && !containerRef.current.contains(e.target)) {
+                setShowSuggestions(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const filtered = inputValue.trim()
+        ? suggestions.filter(s => s.toLowerCase().includes(inputValue.trim().toLowerCase()))
+        : suggestions;
+
+    const handleSelect = (val) => {
+        setInputValue(val);
+        onChange(val);
+        setShowSuggestions(false);
+    };
+
+    const handleInputChange = (e) => {
+        const val = e.target.value;
+        setInputValue(val);
+        onChange(val);
+        setShowSuggestions(true);
+    };
+
+    return (
+        <div className="relative w-full" ref={containerRef}>
+            <label className="block text-[10px] font-bold text-stone-500 uppercase tracking-wider mb-1">
+                {label} {required && <span className="text-red-500 font-bold">*</span>}
+            </label>
+            <div className="relative">
+                <input
+                    type="text"
+                    value={inputValue}
+                    onChange={handleInputChange}
+                    onFocus={() => setShowSuggestions(true)}
+                    className="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:border-amber-400 outline-none transition"
+                    placeholder={label}
+                />
+                {showSuggestions && filtered.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-stone-100 rounded-xl shadow-xl z-50 max-h-40 overflow-y-auto py-1">
+                        {filtered.map(s => (
+                            <button
+                                key={s}
+                                type="button"
+                                onClick={() => handleSelect(s)}
+                                className="w-full text-left px-3 py-2 text-xs hover:bg-stone-50 text-stone-700 font-medium transition-colors"
+                            >
+                                {s}
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+export default function AddLeadModal({ isOpen, onClose, onSave, meta = {}, dealers = [] }) {
     const [formData, setFormData] = useState({ ...DEFAULT_LEAD_FORM });
 
     useEffect(() => {
@@ -128,6 +198,20 @@ export default function AddLeadModal({ isOpen, onClose, onSave, meta = {} }) {
                                             onChange={handleChange}
                                             category={category}
                                             options={meta[category] || []}
+                                        />
+                                    </div>
+                                );
+                            }
+
+                            if (field === 'dealer') {
+                                return (
+                                    <div key={field}>
+                                        <DealerAutocomplete
+                                            label={label}
+                                            value={formData[field]}
+                                            onChange={(val) => handleChange(field, val)}
+                                            suggestions={dealers}
+                                            required={required}
                                         />
                                     </div>
                                 );
